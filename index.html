@@ -1131,7 +1131,7 @@ async function guardarProd(){
   var ts=Date.now();
   var cod='ME'+n.substring(0,4).toUpperCase().replace(/[^A-Z0-9]/g,'')+String(ts).slice(-5)+t.replace(/[^0-9AM]/gi,'').substring(0,3).toUpperCase()+(c||'X').substring(0,2).toUpperCase().replace(/[^A-Z]/g,'X');
   var id='P'+ts;
-  var r=await sb.from('productos').insert({id:id,codigo:cod,nombre:n,categoria:catV,talle:t,color:c,precio_min:pm,precio_may:pM,stock:s,costo:costo});
+  var r=await sb.from('productos').insert({id:id,codigo:cod,nombre:n,categoria:catV,talle:t,color:c,precio_min:pm,precio_may:pM,stock:s});
   if(r.error){toast('Error: '+r.error.message);return;}
   if(s>0) await sb.from('movimientos').insert({tipo:'ingreso',producto:n,talle:t,color:c,qty:s,motivo:'Stock inicial',usuario:_usuarioActual});
   cerrarModal();renderStock();toast('Producto guardado ✓');
