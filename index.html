@@ -1169,7 +1169,7 @@ async function guardarEditProd(id){
       usuario:_usuarioActual
     });
   }
-  await sb.from('productos').update({precio_min:pm,precio_may:pM,costo:costo}).eq('id',id);
+  await sb.from('productos').update({precio_min:pm,precio_may:pM}).eq('id',id);
   cerrarModal();renderStock();toast('Actualizado ✓');
 }
 
