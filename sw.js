@@ -1,9 +1,5 @@
-// Mini Encanto Service Worker
-const CACHE_NAME = 'mini-encanto-v1';
-const urlsToCache = [
-  '/',
-  '/index.html'
-];
+const CACHE_NAME = 'mini-encanto-' + Date.now();
+const urlsToCache = ['/', '/index.html'];
 
 self.addEventListener('install', function(event) {
   event.waitUntil(
@@ -30,7 +26,6 @@ self.addEventListener('activate', function(event) {
 });
 
 self.addEventListener('fetch', function(event) {
-  // Network first for API calls
   if(event.request.url.includes('supabase.co')) {
     return;
   }
@@ -39,4 +34,10 @@ self.addEventListener('fetch', function(event) {
       return caches.match(event.request);
     })
   );
+});
+
+self.addEventListener('message', function(event) {
+  if(event.data === 'skipWaiting') {
+    self.skipWaiting();
+  }
 });
