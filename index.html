@@ -434,7 +434,7 @@ input:focus,select:focus{border-color:var(--rosa);}
   <div style="display:grid;grid-template-columns:1fr 240px;gap:1.5rem;">
     <div class="card" style="display:flex;flex-direction:column;gap:14px;">
       <div class="form-row">
-        <div class="form-group"><label class="form-label">Producto</label><input type="text" id="etq-nombre" placeholder="Ej: Body" oninput="actualizarEtiqueta()"></div>
+        <div class="form-group" style="position:relative"><label class="form-label">Producto</label><input type="text" id="etq-nombre" placeholder="Ej: Body" autocomplete="off" oninput="actualizarEtiqueta();buscarProductoEtiqueta()" onfocus="buscarProductoEtiqueta()" onblur="setTimeout(function(){document.getElementById('etq-sugs').innerHTML='';},200)"><div id="etq-sugs" style="position:absolute;top:100%;left:0;right:0;background:#fff;border:1.5px solid var(--borde);border-radius:10px;margin-top:4px;z-index:50;max-height:240px;overflow-y:auto;box-shadow:0 6px 20px rgba(61,53,48,.12);"></div></div>
         <div class="form-group"><label class="form-label">Talle</label><select id="etq-talle" onchange="actualizarEtiqueta()"><optgroup label="Recién nacido"><option>0-3m</option><option>3-6m</option><option>6-9m</option></optgroup><optgroup label="Bebé"><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option><option>6</option></optgroup><optgroup label="Niño"><option>4</option><option>6</option><option>8</option><option>10</option><option>12</option><option>14</option><option>16</option></optgroup></select></div>
       </div>
       <div class="form-row">
@@ -1297,6 +1297,35 @@ function actualizarEtiqueta(){
   if(n&&etqCod!=='---'){try{JsBarcode('#barcode-preview',etqCod,{format:'CODE128',width:1.8,height:45,displayValue:true,fontSize:9,textMargin:2,margin:6,background:'#ffffff'});}catch(e){}}
 }
 document.getElementById('etq-nombre').addEventListener('focus',function(){etqCod='---';});
+
+function buscarProductoEtiqueta(){
+  var q=document.getElementById('etq-nombre').value.trim();
+  var r=document.getElementById('etq-sugs');
+  var query=sb.from('productos').select('nombre,talle,color,precio_min,precio_may');
+  if(q) query=query.ilike('nombre','%'+q+'%').order('nombre').limit(8);
+  else query=query.order('id',{ascending:false}).limit(10);
+  query.then(function(res){
+    var items=res.data||[];
+    if(!items.length){r.innerHTML='';return;}
+    r.innerHTML=items.map(function(p){
+      return '<div style="padding:8px 12px;border-bottom:1px solid var(--borde);cursor:pointer;font-size:13px;" data-nombre="'+p.nombre+'" data-talle="'+(p.talle||'')+'" data-color="'+(p.color||'')+'" data-pm="'+(p.precio_min||0)+'" data-pmay="'+(p.precio_may||0)+'" onclick="selProductoEtiqueta(this.dataset.nombre,this.dataset.talle,this.dataset.color,this.dataset.pm,this.dataset.pmay)" onmousedown="event.preventDefault()">'
+        +'<div style="font-weight:600">'+p.nombre+'</div>'
+        +'<div style="font-size:11px;color:var(--texto-s)">'+(p.talle||'—')+' / '+(p.color||'—')+' — '+fmt(p.precio_min||0)+'</div>'
+        +'</div>';
+    }).join('');
+  });
+}
+
+function selProductoEtiqueta(nombre,talle,color,pm,pmay){
+  document.getElementById('etq-nombre').value=nombre;
+  if(talle) document.getElementById('etq-talle').value=talle;
+  document.getElementById('etq-color').value=color||'';
+  document.getElementById('etq-precio-min').value=pm||'';
+  document.getElementById('etq-precio-may').value=pmay||'';
+  document.getElementById('etq-sugs').innerHTML='';
+  etqCod='---';
+  actualizarEtiqueta();
+}
 
 function imprimirEtiqueta(){
   var n=document.getElementById('etq-nombre').value.trim();
