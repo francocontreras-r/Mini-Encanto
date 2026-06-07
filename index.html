@@ -401,8 +401,8 @@ input:focus,select:focus{border-color:var(--rosa);}
       </select>
       <select id="stock-talle" onchange="renderStock()" style="width:150px;">
         <option value="">Todos los talles</option>
-        <optgroup label="Bebé"><option>0-3M</option><option>3-6M</option><option>6-9M</option><option>9-12M</option></optgroup>
-        <optgroup label="Niño pequeño"><option>1 año</option><option>2 años</option><option>3 años</option></optgroup>
+        <optgroup label="Recién nacido"><option>0-3m</option><option>3-6m</option><option>6-9m</option></optgroup>
+        <optgroup label="Bebé"><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option><option>6</option></optgroup>
         <optgroup label="Niño"><option>4</option><option>6</option><option>8</option><option>10</option><option>12</option><option>14</option><option>16</option></optgroup>
       </select>
     </div>
@@ -435,7 +435,7 @@ input:focus,select:focus{border-color:var(--rosa);}
     <div class="card" style="display:flex;flex-direction:column;gap:14px;">
       <div class="form-row">
         <div class="form-group"><label class="form-label">Producto</label><input type="text" id="etq-nombre" placeholder="Ej: Body" oninput="actualizarEtiqueta()"></div>
-        <div class="form-group"><label class="form-label">Talle</label><select id="etq-talle" onchange="actualizarEtiqueta()"><optgroup label="Bebé"><option>0-3M</option><option>3-6M</option><option>6-9M</option><option>9-12M</option></optgroup><optgroup label="Niño pequeño"><option>1 año</option><option>2 años</option><option>3 años</option></optgroup><optgroup label="Niño"><option>4</option><option>6</option><option>8</option><option>10</option><option>12</option><option>14</option><option>16</option></optgroup></select></div>
+        <div class="form-group"><label class="form-label">Talle</label><select id="etq-talle" onchange="actualizarEtiqueta()"><optgroup label="Recién nacido"><option>0-3m</option><option>3-6m</option><option>6-9m</option></optgroup><optgroup label="Bebé"><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option><option>6</option></optgroup><optgroup label="Niño"><option>4</option><option>6</option><option>8</option><option>10</option><option>12</option><option>14</option><option>16</option></optgroup></select></div>
       </div>
       <div class="form-row">
         <div class="form-group"><label class="form-label">Color</label><input type="text" id="etq-color" placeholder="Ej: Rosa" oninput="actualizarEtiqueta()"></div>
@@ -826,7 +826,7 @@ function abrirModal(html){document.getElementById('modales').innerHTML='<div cla
 function cerrarModal(){document.getElementById('modales').innerHTML='';}
 function toast(msg){var t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(function(){t.classList.remove('show');},2500);}
 
-var TALLES = '<optgroup label="Bebé"><option>0-3M</option><option>3-6M</option><option>6-9M</option><option>9-12M</option></optgroup><optgroup label="Niño pequeño"><option>1 año</option><option>2 años</option><option>3 años</option></optgroup><optgroup label="Niño"><option>4</option><option>6</option><option>8</option><option>10</option><option>12</option><option>14</option><option>16</option></optgroup>';
+var TALLES = '<optgroup label="Recién nacido"><option>0-3m</option><option>3-6m</option><option>6-9m</option></optgroup><optgroup label="Bebé"><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option><option>6</option></optgroup><optgroup label="Niño"><option>4</option><option>6</option><option>8</option><option>10</option><option>12</option><option>14</option><option>16</option></optgroup>';
 
 function nav(p){
   document.querySelectorAll('.page').forEach(function(x){x.classList.remove('active');});
@@ -1259,8 +1259,14 @@ async function registrarBaja(id){
     document.getElementById('baja-obs').style.borderColor='#E24B4A';
     return;
   }
-  if(qty>(+p.stock||0)){alert('Stock insuficiente');return;}
-  var ns=Math.max(0,(+p.stock||0)-qty);
+  var esDevolucion=/devoluci[oó]n/i.test(bajaMotivoSel);
+  var ns;
+  if(esDevolucion){
+    ns=(+p.stock||0)+qty;
+  }else{
+    if(qty>(+p.stock||0)){alert('Stock insuficiente');return;}
+    ns=Math.max(0,(+p.stock||0)-qty);
+  }
   await sb.from('productos').update({stock:ns}).eq('id',id);
   await sb.from('movimientos').insert({tipo:'baja',producto:p.nombre,talle:p.talle,color:p.color,qty:qty,motivo:bajaMotivoSel+(obs?' — '+obs:''),usuario:_usuarioActual});
   await sb.from('bajas').insert({producto_id:id,nombre:p.nombre,motivo:bajaMotivoSel,qty:qty,obs:obs});
