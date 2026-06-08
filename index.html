@@ -437,8 +437,9 @@ input:focus,select:focus{border-color:var(--rosa);}
         <div class="form-group" style="position:relative"><label class="form-label">Producto</label><input type="text" id="etq-nombre" placeholder="Ej: Body" autocomplete="off" oninput="actualizarEtiqueta();buscarProductoEtiqueta()" onfocus="buscarProductoEtiqueta()" onblur="setTimeout(function(){document.getElementById('etq-sugs').innerHTML='';},200)"><div id="etq-sugs" style="position:absolute;top:100%;left:0;right:0;background:#fff;border:1.5px solid var(--borde);border-radius:10px;margin-top:4px;z-index:50;max-height:240px;overflow-y:auto;box-shadow:0 6px 20px rgba(61,53,48,.12);"></div></div>
         <div class="form-group"><label class="form-label">Talle</label><select id="etq-talle" onchange="actualizarEtiqueta()"><optgroup label="Recién nacido"><option>0-3m</option><option>3-6m</option><option>6-9m</option></optgroup><optgroup label="Bebé"><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option><option>6</option></optgroup><optgroup label="Niño"><option>4</option><option>6</option><option>8</option><option>10</option><option>12</option><option>14</option><option>16</option></optgroup></select></div>
       </div>
+      <div id="etq-talles-chips" style="display:flex;flex-wrap:wrap;align-items:center;gap:6px;"></div>
       <div class="form-row">
-        <div class="form-group"><label class="form-label">Color</label><input type="text" id="etq-color" placeholder="Ej: Rosa" oninput="actualizarEtiqueta()"></div>
+        <div class="form-group"><label class="form-label">Color <span style="font-weight:400;text-transform:none;letter-spacing:0">(opcional, solo para la etiqueta)</span></label><input type="text" id="etq-color" placeholder="Ej: Rosa" oninput="actualizarEtiqueta()"></div>
         <div class="form-group"><label class="form-label">Cantidad</label><input type="number" id="etq-cant" value="1" min="1"></div>
       </div>
       <div class="form-row">
@@ -448,7 +449,6 @@ input:focus,select:focus{border-color:var(--rosa);}
       <div class="form-group"><label class="form-label">Código</label><div style="font-family:monospace;font-size:13px;padding:9px 12px;background:var(--crema);border:1.5px solid var(--borde);border-radius:10px;color:var(--verde-d);font-weight:700;" id="etq-cod">---</div></div>
       <div style="display:flex;gap:10px;">
         <button class="btn btn-verde" onclick="imprimirEtiqueta()">🖨️ Imprimir</button>
-        <button class="btn btn-outline" onclick="guardarDesdeEtiqueta()">📦 Guardar</button>
       </div>
     </div>
     <div>
@@ -827,6 +827,8 @@ function cerrarModal(){document.getElementById('modales').innerHTML='';}
 function toast(msg){var t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(function(){t.classList.remove('show');},2500);}
 
 var TALLES = '<optgroup label="Recién nacido"><option>0-3m</option><option>3-6m</option><option>6-9m</option></optgroup><optgroup label="Bebé"><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option><option>6</option></optgroup><optgroup label="Niño"><option>4</option><option>6</option><option>8</option><option>10</option><option>12</option><option>14</option><option>16</option></optgroup>';
+var TALLES_ARR = ['0-3m','3-6m','6-9m','1','2','3','4','5','6','8','10','12','14','16'];
+function tallesIdx(t){var i=TALLES_ARR.indexOf(t);return i<0?999:i;}
 
 function nav(p){
   document.querySelectorAll('.page').forEach(function(x){x.classList.remove('active');});
@@ -856,23 +858,29 @@ async function cargarDashboard(){
   var mesIni=new Date(hoy.getFullYear(),hoy.getMonth(),1);
   var vHoy=await sb.from('ventas').select('total').gte('fecha',hoy.toISOString());
   var vMes=await sb.from('ventas').select('total').gte('fecha',mesIni.toISOString());
-  var prods=await sb.from('productos').select('id,stock');
+  var rProds=await sb.from('productos').select('id,nombre,categoria,precio_min,precio_may');
+  var rVars=await sb.from('variantes').select('*');
+  var prods=rProds.data||[];
+  var vars=rVars.data||[];
+  var prodMap={};
+  prods.forEach(function(p){prodMap[p.id]=p;});
+  function stockDe(pid){return vars.filter(function(v){return v.producto_id===pid;}).reduce(function(a,v){return a+(+v.stock||0);},0);}
   var ultV=await sb.from('ventas').select('*').order('num',{ascending:false}).limit(5);
-  var bajos=await sb.from('productos').select('*').lte('stock',5).order('stock');
+  var bajos=vars.filter(function(v){return (+v.stock||0)<=5;}).sort(function(a,b){return (+a.stock||0)-(+b.stock||0);});
   var totHoy=(vHoy.data||[]).reduce(function(a,v){return a+(+v.total||0);},0);
   var totMes=(vMes.data||[]).reduce(function(a,v){return a+(+v.total||0);},0);
   document.getElementById('m-hoy').textContent=fmt(totHoy);
   document.getElementById('m-hoy-c').textContent=(vHoy.data||[]).length+' transacciones';
   document.getElementById('m-mes').textContent=fmt(totMes);
   document.getElementById('m-mes-c').textContent=(vMes.data||[]).length+' transacciones';
-  document.getElementById('m-prods').textContent=(prods.data||[]).length;
-  document.getElementById('m-bajo').textContent=(prods.data||[]).filter(function(p){return (+p.stock||0)<=5;}).length;
+  document.getElementById('m-prods').textContent=prods.length;
+  document.getElementById('m-bajo').textContent=bajos.length;
   var dv=document.getElementById('dash-ventas');
   if(!(ultV.data||[]).length){dv.innerHTML='<div class="empty"><div class="empty-icon">🧾</div>Sin ventas aún</div>';}
   else{dv.innerHTML='<table><thead><tr><th>Fecha</th><th>Cliente</th><th>Pago</th><th>Total</th></tr></thead><tbody>'+(ultV.data||[]).map(function(v){return '<tr><td>'+fmtF(v.fecha)+'</td><td>'+(v.cliente||'—')+'</td><td><span class="badge badge-rosa">'+v.pago+'</span></td><td style="font-weight:700">'+fmt(v.total)+'</td></tr>';}).join('')+'</tbody></table>';}
   var db=document.getElementById('dash-bajo');
-  if(!(bajos.data||[]).length){db.innerHTML='<div class="empty" style="padding:1rem">✅ Todo bien</div>';}
-  else{db.innerHTML='<table><thead><tr><th>Producto</th><th>Talle</th><th>Estado</th></tr></thead><tbody>'+(bajos.data||[]).map(function(p){return '<tr><td style="font-weight:600">'+p.nombre+'</td><td>'+p.talle+'</td><td>'+stockBadge(p.stock)+'</td></tr>';}).join('')+'</tbody></table>';}
+  if(!bajos.length){db.innerHTML='<div class="empty" style="padding:1rem">✅ Todo bien</div>';}
+  else{db.innerHTML='<table><thead><tr><th>Producto</th><th>Talle</th><th>Estado</th></tr></thead><tbody>'+bajos.map(function(v){var p=prodMap[v.producto_id];return '<tr><td style="font-weight:600">'+(p?p.nombre:'—')+'</td><td>'+v.talle+'</td><td>'+stockBadge(v.stock)+'</td></tr>';}).join('')+'</tbody></table>';}
   // Ventas por forma de pago del mes
   var vMesAll=await sb.from('ventas').select('pago,total,tipo_precio').gte('fecha',mesIni.toISOString());
   var allV=vMesAll.data||[];
@@ -901,8 +909,7 @@ async function cargarDashboard(){
     +'</div>';
   document.getElementById('dash-pagos').innerHTML=dpHTML;
   // Inventario por categoria
-  var rInv=await sb.from('productos').select('categoria,stock,precio_min,precio_may');
-  var invData=rInv.data||[];
+  var invData=prods.map(function(p){return {categoria:p.categoria,precio_min:p.precio_min,precio_may:p.precio_may,stock:stockDe(p.id)};});
   var invHTML='<div style="overflow-x:auto"><table style="font-size:13px"><thead><tr>'
     +'<th>Categoría</th><th>Productos</th><th>Unidades</th><th>Valor minorista</th><th>Valor mayorista</th></tr></thead><tbody>';
   CATS.forEach(function(cat){
@@ -1015,7 +1022,16 @@ async function cargarDashboard(){
 
 // ── STOCK ─────────────────────────────────────────────────────────────────────
 var _prods = [];
+var _variantes = [];
 var _stockFiltroEspecial = null; // null, 'bajo'
+
+function variantesDe(prodId){return _variantes.filter(function(v){return v.producto_id===prodId;});}
+function stockTotalProd(prodId){return variantesDe(prodId).reduce(function(a,v){return a+(+v.stock||0);},0);}
+function chipVariante(v){
+  var s=+v.stock||0;
+  var sty=s===0?'color:#9A1C1C;background:#FDEAEA':(s<=5?'color:#9A6200;background:#FEF3E2':'color:var(--verde-d);background:var(--verde-l)');
+  return '<span style="display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:20px;font-size:11px;font-weight:700;'+sty+'">'+v.talle+': '+s+' uds.</span>';
+}
 
 function filtrarStockBajo(){
   _stockFiltroEspecial = 'bajo';
@@ -1030,15 +1046,18 @@ async function renderStock(){
   var t=document.getElementById('stock-tabla');
   t.innerHTML='<div class="loading"><div class="spinner"></div></div>';
   var cf=document.getElementById('stock-cat').value;
-  var query=sb.from('productos').select('*').order('nombre');
-  if(tf) query=query.eq('talle',tf);
-  var r=await query;
-  _prods=r.data||[];
+  var rProd=await sb.from('productos').select('*').order('nombre');
+  _prods=rProd.data||[];
+  var rVar=await sb.from('variantes').select('*');
+  _variantes=rVar.data||[];
   var list=_prods.filter(function(p){
-    var mq=!q||p.nombre.toLowerCase().indexOf(q)>=0||p.codigo.toLowerCase().indexOf(q)>=0;
-    var mc=!cf||(p.categoria||'')=== cf;
-    var mb=_stockFiltroEspecial!=='bajo'||(+p.stock||0)<=5;
-    return mq&&mc&&mb;
+    var vs=variantesDe(p.id);
+    var total=stockTotalProd(p.id);
+    var mq=!q||p.nombre.toLowerCase().indexOf(q)>=0||(p.codigo||'').toLowerCase().indexOf(q)>=0;
+    var mc=!cf||(p.categoria||'')===cf;
+    var mt=!tf||vs.some(function(v){return v.talle===tf;});
+    var mb=_stockFiltroEspecial!=='bajo'||total<=5;
+    return mq&&mc&&mt&&mb;
   });
   // Show filter banner if bajo filter active
   var bannerHTML='';
@@ -1050,23 +1069,31 @@ async function renderStock(){
   }
   if(!list.length){t.innerHTML=bannerHTML+'<div class="empty"><div class="empty-icon">🔍</div>No encontrado</div>';return;}
   var rows=list.map(function(p){
+    var vs=variantesDe(p.id).slice().sort(function(a,b){return tallesIdx(a.talle)-tallesIdx(b.talle);});
+    var total=stockTotalProd(p.id);
+    var chips=vs.length
+      ? vs.map(chipVariante).join('')
+      : '<span style="font-size:11px;color:var(--texto-s)">Sin variantes — editá el producto para agregar talles</span>';
     return '<tr>'
       +'<td style="font-family:monospace;font-size:11px;color:var(--texto-s)">'+p.codigo+'</td>'
       +'<td style="font-size:12px;">'+catLabel(p.categoria||'')+'</td>'
       +'<td style="font-weight:600">'+p.nombre+'</td>'
-      +'<td>'+(p.talle&&p.talle!=='—'?p.talle:'—')+'</td>'
-      +'<td>'+(p.color&&p.color!=='—'?p.color:'—')+'</td>'
       +'<td style="color:var(--gris)">'+(p.costo?fmt(p.costo):'—')+'</td>'
       +'<td>'+fmt(p.precio_min)+'</td>'
       +'<td style="color:var(--verde-d)">'+fmt(p.precio_may)+'</td>'
-      +'<td>'+stockBadge(p.stock)+'</td>'
+      +'<td>'+stockBadge(total)+'</td>'
       +'<td style="display:flex;gap:4px;">'
       +'<button class="btn btn-sm btn-outline" data-id="'+p.id+'" onclick="editarProd(this.dataset.id)" title="Editar">✏️</button>'
-      +'<button class="btn btn-sm" style="background:var(--rosa-l);color:var(--rosa-d);border:none;" data-id="'+p.id+'" data-nombre="'+p.nombre+'" data-talle="'+p.talle+'" data-color="'+p.color+'" data-stock="'+p.stock+'" onclick="abrirSeguimiento(this.dataset.id,this.dataset.nombre,this.dataset.talle,this.dataset.color,this.dataset.stock)" title="Seguimiento">📊</button>'
+      +'<button class="btn btn-sm" style="background:var(--rosa-l);color:var(--rosa-d);border:none;" data-id="'+p.id+'" data-nombre="'+p.nombre+'" data-stock="'+total+'" onclick="abrirSeguimiento(this.dataset.id,this.dataset.nombre,this.dataset.stock)" title="Seguimiento">📊</button>'
       +'</td>'
-      +'</tr>';
+      +'</tr>'
+      +'<tr class="fila-variantes"><td colspan="8" style="padding:4px 12px 14px 12px;">'
+      +'<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center;">'
+      +'<span style="font-size:10px;font-weight:700;color:var(--texto-s);text-transform:uppercase;letter-spacing:.5px;margin-right:2px;">Talles:</span>'
+      +chips
+      +'</div></td></tr>';
   });
-  t.innerHTML=bannerHTML+'<table><thead><tr><th>Código</th><th>Categoría</th><th>Producto</th><th>Talle</th><th>Color</th><th>Costo</th><th>Minorista</th><th>Mayorista</th><th>Stock</th><th></th></tr></thead><tbody>'+rows.join('')+'</tbody></table>';
+  t.innerHTML=bannerHTML+'<table><thead><tr><th>Código</th><th>Categoría</th><th>Producto</th><th>Costo</th><th>Minorista</th><th>Mayorista</th><th>Stock total</th><th></th></tr></thead><tbody>'+rows.join('')+'</tbody></table>';
 }
 
 var CATS = [
@@ -1082,25 +1109,18 @@ var CATS_SEL = CATS.map(function(c){return '<option value="'+c.v+'">'+c.l+'</opt
 function getCat(v){return CATS.find(function(c){return c.v===v;})||CATS[0];}
 function catLabel(v){var c=getCat(v);return c?c.l:v;}
 
-function onCatChange(){
-  var cat=getCat(document.getElementById('np-cat').value);
-  document.getElementById('np-talle-row').style.display=cat.talle?'grid':'none';
-  document.getElementById('np-color-row').style.display=cat.color?'':'none';
-}
-
 function abrirNuevoProd(){
   abrirModal('<div class="modal"><div class="modal-title">Nuevo producto</div>'
-    +'<div class="form-group" style="margin-bottom:10px"><label class="form-label">Categoría</label><select id="np-cat" onchange="onCatChange()">'+CATS_SEL+'</select></div>'
+    +'<div class="form-group" style="margin-bottom:10px"><label class="form-label">Categoría</label><select id="np-cat">'+CATS_SEL+'</select></div>'
     +'<div class="form-group" style="margin-bottom:10px"><label class="form-label">Nombre</label><input type="text" id="np-n" placeholder="Ej: Body manga corta"></div>'
-    +'<div class="form-row" id="np-talle-row" style="margin-bottom:10px;display:grid"><div class="form-group"><label class="form-label">Talle</label><select id="np-t">'+TALLES+'</select></div><div class="form-group" id="np-color-row"><label class="form-label">Color</label><input type="text" id="np-c" placeholder="Ej: Rosa"></div></div>'
-    +'<div class="form-row" style="margin-bottom:10px"><div class="form-group"><label class="form-label">💰 Costo</label><input type="number" id="np-costo" value="0" oninput="calcularPrecios()"></div><div class="form-group"><label class="form-label">Stock inicial</label><input type="number" id="np-s" value="0"></div></div>'
+    +'<div class="form-group" style="margin-bottom:10px;max-width:48%"><label class="form-label">💰 Costo</label><input type="number" id="np-costo" value="0" oninput="calcularPrecios()"></div>'
     +'<div style="background:var(--crema);border-radius:10px;padding:10px;margin-bottom:10px;">'
     +'<div style="font-size:11px;font-weight:700;color:var(--texto-s);margin-bottom:8px;">MÁRGENES DE GANANCIA</div>'
     +'<div class="form-row" style="margin-bottom:8px"><div class="form-group"><label class="form-label">💗 Margen minorista %</label><input type="number" id="np-marg-min" value="80" oninput="calcularPrecios()"></div><div class="form-group"><label class="form-label">🟢 Margen mayorista %</label><input type="number" id="np-marg-may" value="30" oninput="calcularPrecios()"></div></div>'
     +'<div class="form-row"><div class="form-group"><label class="form-label">💗 Precio minorista</label><input type="number" id="np-pm" value="0" oninput="calcularMargen()"></div><div class="form-group"><label class="form-label">🟢 Precio mayorista</label><input type="number" id="np-pM" value="0" oninput="calcularMargen()"></div></div>'
     +'<div id="np-margen-info" style="font-size:11px;color:var(--verde-d);margin-top:6px;"></div>'
     +'</div>'
-    +'<div class="modal-footer"><button class="btn btn-outline" onclick="cerrarModal()">Cancelar</button><button class="btn btn-rosa" onclick="guardarProd()">✓ Guardar</button></div></div>');
+    +'<div class="modal-footer"><button class="btn btn-outline" onclick="cerrarModal()">Cancelar</button><button class="btn btn-rosa" onclick="guardarProd()">Continuar →</button></div></div>');
 }
 
 function calcularPrecios(){
@@ -1133,40 +1153,162 @@ async function guardarProd(){
   if(!n){alert('Ingresá un nombre');return;}
   var catV=document.getElementById('np-cat').value;
   var cat=getCat(catV);
-  var t=cat.talle?document.getElementById('np-t').value:'—';
-  var c=cat.color?document.getElementById('np-c').value.trim():'—';
   var pm=parseFloat(document.getElementById('np-pm').value)||0;
   var pM=parseFloat(document.getElementById('np-pM').value)||0;
-  var s=parseInt(document.getElementById('np-s').value)||0;
-  var costo=parseFloat(document.getElementById('np-costo').value)||0;
   var ts=Date.now();
-  var cod='ME'+n.substring(0,4).toUpperCase().replace(/[^A-Z0-9]/g,'')+String(ts).slice(-5)+t.replace(/[^0-9AM]/gi,'').substring(0,3).toUpperCase()+(c||'X').substring(0,2).toUpperCase().replace(/[^A-Z]/g,'X');
+  var cod='ME'+n.substring(0,4).toUpperCase().replace(/[^A-Z0-9]/g,'')+String(ts).slice(-5);
   var id='P'+ts;
-  var r=await sb.from('productos').insert({id:id,codigo:cod,nombre:n,categoria:catV,talle:t,color:c,precio_min:pm,precio_may:pM,stock:s});
+  var r=await sb.from('productos').insert({id:id,codigo:cod,nombre:n,categoria:catV,precio_min:pm,precio_may:pM});
   if(r.error){toast('Error: '+r.error.message);return;}
-  if(s>0) await sb.from('movimientos').insert({tipo:'ingreso',producto:n,talle:t,color:c,qty:s,motivo:'Stock inicial',usuario:_usuarioActual});
-  cerrarModal();renderStock();toast('Producto guardado ✓');
+  abrirPasoVariantes(id,n,cat.talle);
 }
+
+// ── PASO 2: variantes de talle al crear un producto ──────────────────────────
+var _npVariantSel = {}; // {talle: stockInicial}
+
+function abrirPasoVariantes(prodId,nombre,tieneTalle){
+  _npVariantSel={};
+  if(tieneTalle){
+    abrirModal('<div class="modal"><div class="modal-title">Talles y stock inicial</div>'
+      +'<p style="font-size:13px;color:var(--texto-s);margin-bottom:4px">"'+nombre+'" — Tocá los talles disponibles e ingresá el stock inicial de cada uno.</p>'
+      +'<div id="npv-chips" style="display:flex;flex-wrap:wrap;gap:8px;margin:10px 0;"></div>'
+      +'<div id="npv-rows"></div>'
+      +'<div class="modal-footer"><button class="btn btn-outline" onclick="cerrarModal();renderStock();toast(\'Producto guardado ✓\')">Omitir por ahora</button><button class="btn btn-rosa" data-id="'+prodId+'" data-nombre="'+nombre+'" onclick="guardarVariantesIniciales(this.dataset.id,this.dataset.nombre,true)">✓ Guardar talles</button></div></div>');
+    renderNpvChips();
+  }else{
+    abrirModal('<div class="modal"><div class="modal-title">Stock inicial</div>'
+      +'<p style="font-size:13px;color:var(--texto-s);margin-bottom:10px">"'+nombre+'" no maneja talles — se va a crear una variante única para registrar su stock.</p>'
+      +'<div class="form-group" style="margin-bottom:10px"><label class="form-label">Stock inicial</label><input type="number" id="npv-unico" value="0" min="0"></div>'
+      +'<div class="modal-footer"><button class="btn btn-outline" onclick="cerrarModal();renderStock();toast(\'Producto guardado ✓\')">Omitir por ahora</button><button class="btn btn-rosa" data-id="'+prodId+'" data-nombre="'+nombre+'" onclick="guardarVariantesIniciales(this.dataset.id,this.dataset.nombre,false)">✓ Guardar stock</button></div></div>');
+  }
+}
+
+function npvToggleTalle(talle){
+  if(_npVariantSel.hasOwnProperty(talle)) delete _npVariantSel[talle];
+  else _npVariantSel[talle]=0;
+  renderNpvChips();
+}
+function npvSetStock(talle,val){_npVariantSel[talle]=parseInt(val)||0;}
+
+function renderNpvChips(){
+  var chips=TALLES_ARR.map(function(tt){
+    var sel=_npVariantSel.hasOwnProperty(tt);
+    return '<span class="baja-opt'+(sel?' sel':'')+'" style="display:inline-flex;margin-bottom:0;padding:7px 14px;" data-talle="'+tt+'" onclick="npvToggleTalle(this.dataset.talle)">'+tt+'</span>';
+  }).join('');
+  document.getElementById('npv-chips').innerHTML=chips;
+  var keys=Object.keys(_npVariantSel);
+  document.getElementById('npv-rows').innerHTML = keys.length
+    ? keys.map(function(tt){
+        return '<div style="display:flex;align-items:center;gap:10px;padding:8px 12px;background:var(--crema);border-radius:10px;margin-bottom:6px;">'
+          +'<div style="flex:1;font-weight:600;font-size:13px">Talle '+tt+'</div>'
+          +'<label style="font-size:11px;color:var(--texto-s)">Stock inicial</label>'
+          +'<input type="number" min="0" value="'+(_npVariantSel[tt]||0)+'" style="width:70px" data-talle="'+tt+'" oninput="npvSetStock(this.dataset.talle,this.value)">'
+          +'</div>';
+      }).join('')
+    : '<div style="font-size:12px;color:var(--texto-s);padding:6px 0">Tocá uno o más talles para agregarlos.</div>';
+}
+
+async function guardarVariantesIniciales(prodId,nombre,tieneTalle){
+  var inserts=[];
+  if(tieneTalle){
+    var talles=Object.keys(_npVariantSel);
+    if(!talles.length){alert('Seleccioná al menos un talle, o usá "Omitir por ahora".');return;}
+    talles.forEach(function(tt,i){
+      inserts.push({id:'V'+Date.now()+i,producto_id:prodId,talle:tt,stock:_npVariantSel[tt]||0});
+    });
+  }else{
+    var s=parseInt(document.getElementById('npv-unico').value)||0;
+    inserts.push({id:'V'+Date.now(),producto_id:prodId,talle:'Único',stock:s});
+  }
+  var r=await sb.from('variantes').insert(inserts);
+  if(r.error){toast('Error al guardar talles: '+r.error.message);return;}
+  var movs=inserts.filter(function(v){return (+v.stock||0)>0;}).map(function(v){
+    return {tipo:'ingreso',producto:nombre,talle:v.talle,qty:v.stock,motivo:'Stock inicial',usuario:_usuarioActual};
+  });
+  if(movs.length) await sb.from('movimientos').insert(movs);
+  cerrarModal();renderStock();toast('Producto y talles guardados ✓');
+}
+
+var _epVariantes=[];        // variantes existentes en edición: {id,talle,stock,_orig}
+var _epNuevasVariantes=[];  // variantes nuevas a crear: {talle,stock}
 
 async function editarProd(id){
   var p=_prods.find(function(x){return x.id===id;});
   if(!p){var r=await sb.from('productos').select('*').eq('id',id).single();p=r.data;}
   if(!p) return;
-  abrirModal('<div class="modal"><div class="modal-title">Editar producto</div>'
-    +'<div style="font-family:monospace;font-size:11px;color:var(--texto-s);margin-bottom:4px">'+p.codigo+'</div>'
-    +'<div style="font-weight:600;margin-bottom:12px">'+p.nombre+' — '+p.talle+' / '+p.color+'</div>'
-    +'<div style="background:var(--verde-l);border-radius:10px;padding:8px 12px;font-size:12px;color:var(--verde-d);margin-bottom:10px;">📦 Stock actual: <strong>'+p.stock+' unidades</strong> — Para modificar usá Ingreso o Baja</div>'
+  var rv=await sb.from('variantes').select('*').eq('producto_id',id);
+  _epVariantes=(rv.data||[]).map(function(v){return {id:v.id,talle:v.talle,stock:+v.stock||0,_orig:+v.stock||0};})
+    .sort(function(a,b){return tallesIdx(a.talle)-tallesIdx(b.talle);});
+  _epNuevasVariantes=[];
+  abrirModal('<div class="modal" style="width:520px">'
+    +'<div class="modal-title">Editar producto</div>'
+    +'<div style="font-family:monospace;font-size:11px;color:var(--texto-s);margin-bottom:10px">'+p.codigo+'</div>'
+    +'<div class="form-group" style="margin-bottom:10px"><label class="form-label">Nombre</label><input type="text" id="ep-n" value="'+(p.nombre||'').replace(/"/g,'&quot;')+'"></div>'
+    +'<div class="form-group" style="margin-bottom:10px"><label class="form-label">Categoría</label><select id="ep-cat">'+CATS.map(function(c){return '<option value="'+c.v+'"'+(c.v===p.categoria?' selected':'')+'>'+c.l+'</option>';}).join('')+'</select></div>'
     +'<div class="form-row" style="margin-bottom:10px"><div class="form-group"><label class="form-label">💗 Minorista</label><input type="number" id="ep-pm" value="'+(p.precio_min||0)+'"></div><div class="form-group"><label class="form-label">🟢 Mayorista</label><input type="number" id="ep-pM" value="'+(p.precio_may||0)+'"></div></div>'
-    +'<div class="form-group" style="margin-bottom:10px"><label class="form-label">💰 Costo</label><input type="number" id="ep-costo" value="'+(p.costo||0)+'"></div>'
+    +'<div class="form-group" style="margin-bottom:14px"><label class="form-label">💰 Costo</label><input type="number" id="ep-costo" value="'+(p.costo||0)+'"></div>'
+    +'<div style="border-top:1px solid var(--borde);padding-top:12px;">'
+    +'<div style="font-size:11px;font-weight:700;color:var(--texto-s);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;">Variantes de talle y stock</div>'
+    +'<div id="ep-variantes-list"></div>'
+    +'<div id="ep-agregar-talle"></div>'
+    +'</div>'
     +'<div class="modal-footer">'
     +'<button class="btn btn-danger btn-sm" data-id="'+id+'" onclick="eliminarProd(this.dataset.id)">🗑️</button>'
     +'<button class="btn btn-outline btn-sm" data-id="'+id+'" onclick="verHistorialPrecios(this.dataset.id)">📈 Historial</button>'
     +'<button class="btn btn-outline" onclick="cerrarModal()">Cancelar</button>'
     +'<button class="btn btn-rosa" data-id="'+id+'" onclick="guardarEditProd(this.dataset.id)">✓ Guardar</button>'
     +'</div></div>');
+  renderEpVariantes();
+}
+
+function renderEpVariantes(){
+  var rows=_epVariantes.map(function(v,i){
+    return '<div style="display:flex;align-items:center;gap:10px;padding:8px 12px;background:var(--crema);border-radius:10px;margin-bottom:6px;">'
+      +'<div style="flex:1;font-weight:600;font-size:13px">Talle '+v.talle+'</div>'
+      +'<label style="font-size:11px;color:var(--texto-s)">Stock</label>'
+      +'<input type="number" min="0" value="'+v.stock+'" style="width:70px" data-i="'+i+'" oninput="epSetStockVariante(this.dataset.i,this.value)">'
+      +'</div>';
+  }).join('');
+  var nuevas=_epNuevasVariantes.map(function(v,i){
+    return '<div style="display:flex;align-items:center;gap:10px;padding:8px 12px;background:var(--verde-l);border-radius:10px;margin-bottom:6px;">'
+      +'<div style="flex:1;font-weight:600;font-size:13px;color:var(--verde-d)">Talle '+v.talle+' <span style="font-weight:400;font-size:11px">(nuevo)</span></div>'
+      +'<div style="font-size:12px;color:var(--verde-d)">Stock inicial: '+v.stock+'</div>'
+      +'<button class="btn btn-sm btn-outline" data-i="'+i+'" onclick="epQuitarNuevaVariante(this.dataset.i)" title="Quitar">✕</button>'
+      +'</div>';
+  }).join('');
+  document.getElementById('ep-variantes-list').innerHTML = (rows+nuevas) || '<div style="font-size:12px;color:var(--texto-s);padding:6px 0 10px">Este producto todavía no tiene variantes cargadas.</div>';
+  var usados={};
+  _epVariantes.forEach(function(v){usados[v.talle]=true;});
+  _epNuevasVariantes.forEach(function(v){usados[v.talle]=true;});
+  var disponibles=TALLES_ARR.filter(function(tt){return !usados[tt];});
+  var picker=document.getElementById('ep-agregar-talle');
+  if(!disponibles.length){
+    picker.innerHTML='<div style="font-size:11px;color:var(--texto-s);margin-top:4px">Ya agregaste todos los talles disponibles.</div>';
+    return;
+  }
+  picker.innerHTML='<div style="display:flex;align-items:flex-end;gap:8px;margin-top:8px;">'
+    +'<div class="form-group" style="flex:1"><label class="form-label">Agregar talle</label><select id="ep-nuevo-talle">'+disponibles.map(function(tt){return '<option value="'+tt+'">'+tt+'</option>';}).join('')+'</select></div>'
+    +'<div class="form-group" style="width:90px"><label class="form-label">Stock inicial</label><input type="number" id="ep-nuevo-stock" value="0" min="0"></div>'
+    +'<button class="btn btn-outline btn-sm" onclick="epAgregarVariante()">+ Agregar</button>'
+    +'</div>';
+}
+
+function epSetStockVariante(i,val){_epVariantes[i].stock=parseInt(val)||0;}
+function epAgregarVariante(){
+  var talle=document.getElementById('ep-nuevo-talle').value;
+  var stock=parseInt(document.getElementById('ep-nuevo-stock').value)||0;
+  _epNuevasVariantes.push({talle:talle,stock:stock});
+  renderEpVariantes();
+}
+function epQuitarNuevaVariante(i){
+  _epNuevasVariantes.splice(+i,1);
+  renderEpVariantes();
 }
 
 async function guardarEditProd(id){
+  var n=document.getElementById('ep-n').value.trim();
+  if(!n){alert('Ingresá un nombre');return;}
+  var catV=document.getElementById('ep-cat').value;
   var pm=parseFloat(document.getElementById('ep-pm').value)||0;
   var pM=parseFloat(document.getElementById('ep-pM').value)||0;
   var costo=parseFloat(document.getElementById('ep-costo').value)||0;
@@ -1180,54 +1322,107 @@ async function guardarEditProd(id){
       usuario:_usuarioActual
     });
   }
-  await sb.from('productos').update({precio_min:pm,precio_may:pM}).eq('id',id);
+  await sb.from('productos').update({nombre:n,categoria:catV,precio_min:pm,precio_may:pM}).eq('id',id);
+
+  for(var i=0;i<_epVariantes.length;i++){
+    var v=_epVariantes[i];
+    if(v.stock!==v._orig){
+      await sb.from('variantes').update({stock:v.stock}).eq('id',v.id);
+      var diff=v.stock-v._orig;
+      await sb.from('movimientos').insert({tipo:diff>0?'ingreso':'baja',producto:n,talle:v.talle,qty:Math.abs(diff),motivo:'Ajuste manual (edición de producto)',usuario:_usuarioActual});
+    }
+  }
+  if(_epNuevasVariantes.length){
+    var inserts=_epNuevasVariantes.map(function(v,i){return {id:'V'+Date.now()+i,producto_id:id,talle:v.talle,stock:v.stock||0};});
+    var r=await sb.from('variantes').insert(inserts);
+    if(r.error){toast('Error al agregar talles: '+r.error.message);return;}
+    var movs=inserts.filter(function(v){return (+v.stock||0)>0;}).map(function(v){
+      return {tipo:'ingreso',producto:n,talle:v.talle,qty:v.stock,motivo:'Stock inicial (talle agregado)',usuario:_usuarioActual};
+    });
+    if(movs.length) await sb.from('movimientos').insert(movs);
+  }
   cerrarModal();renderStock();toast('Actualizado ✓');
 }
 
 async function eliminarProd(id){
-  if(!confirm('¿Eliminar?')) return;
+  if(!confirm('¿Eliminar? También se eliminarán sus variantes de talle.')) return;
+  await sb.from('variantes').delete().eq('producto_id',id);
   await sb.from('productos').delete().eq('id',id);
   cerrarModal();renderStock();toast('Eliminado');
 }
 
+var _ingresoProdSel=null;
 function abrirIngreso(){
-  abrirModal('<div class="modal"><div class="modal-title">📥 Ingreso de mercadería</div><input type="text" id="ing-q" placeholder="Buscá el producto…" oninput="buscarIngreso()" style="margin-bottom:8px"><div id="ing-r"></div><div class="modal-footer"><button class="btn btn-outline" onclick="cerrarModal()">Cerrar</button></div></div>');
+  _ingresoProdSel=null;
+  abrirModal('<div class="modal"><div class="modal-title">📥 Ingreso de mercadería</div>'
+    +'<input type="text" id="ing-q" placeholder="Buscá el producto…" oninput="buscarIngreso()" style="margin-bottom:8px">'
+    +'<div id="ing-r"></div>'
+    +'<div id="ing-variante"></div>'
+    +'<div class="modal-footer"><button class="btn btn-outline" onclick="cerrarModal()">Cerrar</button></div></div>');
 }
 
 function buscarIngreso(){
   var q=document.getElementById('ing-q').value.toLowerCase();
   var r=document.getElementById('ing-r');
+  _ingresoProdSel=null;
+  document.getElementById('ing-variante').innerHTML='';
   if(!q){r.innerHTML='';return;}
-  var found=_prods.filter(function(p){return p.nombre.toLowerCase().indexOf(q)>=0||p.codigo.toLowerCase().indexOf(q)>=0;}).slice(0,5);
+  var found=_prods.filter(function(p){return p.nombre.toLowerCase().indexOf(q)>=0||(p.codigo||'').toLowerCase().indexOf(q)>=0;}).slice(0,5);
   if(!found.length){r.innerHTML='<div style="font-size:13px;color:var(--texto-s)">No encontrado. Cargá primero desde Stock.</div>';return;}
   r.innerHTML=found.map(function(p){
-    return '<div style="display:flex;align-items:center;gap:10px;padding:10px;background:var(--crema);border-radius:10px;margin-bottom:6px">'
-      +'<div style="flex:1"><div style="font-weight:600;font-size:13px">'+p.nombre+'</div><div style="font-size:11px;color:var(--texto-s)">'+p.talle+' / '+p.color+' — Stock: '+p.stock+'</div></div>'
-      +'<input type="number" value="1" min="1" style="width:64px" id="iq-'+p.id+'">'
-      +'<button class="btn btn-verde btn-sm" data-id="'+p.id+'" onclick="sumarStock(this.dataset.id)">+ Sumar</button>'
+    return '<div style="display:flex;align-items:center;gap:10px;padding:10px;background:var(--crema);border-radius:10px;margin-bottom:6px;cursor:pointer;" data-id="'+p.id+'" onclick="selProductoIngreso(this.dataset.id)">'
+      +'<div style="flex:1"><div style="font-weight:600;font-size:13px">'+p.nombre+'</div><div style="font-size:11px;color:var(--texto-s)">Stock total: '+stockTotalProd(p.id)+' uds. — '+variantesDe(p.id).length+' talle(s) cargado(s)</div></div>'
+      +'<button class="btn btn-sm btn-outline">Elegir talle →</button>'
       +'</div>';
   }).join('');
 }
 
-async function sumarStock(id){
+function selProductoIngreso(id){
   var p=_prods.find(function(x){return x.id===id;});
-  var el=document.getElementById('iq-'+id);
-  var qty=el?parseInt(el.value)||1:1;
-  var ns=(+p.stock||0)+qty;
-  await sb.from('productos').update({stock:ns}).eq('id',id);
-  await sb.from('movimientos').insert({tipo:'ingreso',producto:p.nombre,talle:p.talle,color:p.color,qty:qty,motivo:'Ingreso manual',usuario:_usuarioActual});
-  p.stock=ns;
-  buscarIngreso();
-  toast('Stock actualizado: '+ns+' uds.');
+  if(!p) return;
+  _ingresoProdSel=p;
+  var vs=variantesDe(p.id).slice().sort(function(a,b){return tallesIdx(a.talle)-tallesIdx(b.talle);});
+  var v=document.getElementById('ing-variante');
+  if(!vs.length){
+    v.innerHTML='<div style="font-size:13px;color:#9A1C1C;background:#FDEAEA;border-radius:10px;padding:10px 12px;margin-bottom:8px;">"'+p.nombre+'" no tiene talles cargados — agregalos editando el producto.</div>';
+    return;
+  }
+  v.innerHTML='<div style="border:1.5px solid var(--borde);border-radius:10px;padding:12px;margin-bottom:8px;">'
+    +'<div style="font-weight:600;font-size:13px;margin-bottom:8px">'+p.nombre+'</div>'
+    +'<div class="form-row">'
+    +'<div class="form-group"><label class="form-label">Talle</label><select id="ing-talle">'+vs.map(function(vv){return '<option value="'+vv.id+'">'+vv.talle+' — Stock: '+vv.stock+'</option>';}).join('')+'</select></div>'
+    +'<div class="form-group"><label class="form-label">Cantidad a sumar</label><input type="number" id="ing-qty" value="1" min="1"></div>'
+    +'</div>'
+    +'<button class="btn btn-verde btn-sm" style="margin-top:10px" onclick="sumarStock()">+ Sumar</button>'
+    +'</div>';
+}
+
+async function sumarStock(){
+  var p=_ingresoProdSel;
+  var sel=document.getElementById('ing-talle');
+  if(!p||!sel){alert('Elegí un producto y su talle.');return;}
+  var variante=_variantes.find(function(v){return v.id===sel.value;});
+  if(!variante) return;
+  var qty=parseInt(document.getElementById('ing-qty').value)||1;
+  var ns=(+variante.stock||0)+qty;
+  await sb.from('variantes').update({stock:ns}).eq('id',variante.id);
+  await sb.from('movimientos').insert({tipo:'ingreso',producto:p.nombre,talle:variante.talle,qty:qty,motivo:'Ingreso manual',usuario:_usuarioActual});
+  variante.stock=ns;
+  selProductoIngreso(p.id);
+  renderStock();
+  toast('Stock de talle '+variante.talle+' actualizado: '+ns+' uds.');
 }
 
 var bajaMotivoSel='Rotura';
+var _bajaProdSel=null;
 function abrirBaja(){
+  _bajaProdSel=null;
   abrirModal('<div class="modal"><div class="modal-title">📉 Baja de stock</div>'
     +'<p style="font-size:13px;color:var(--texto-s);margin-bottom:12px">Registrá la baja por rotura, devolución o pérdida.</p>'
     +'<div style="margin-bottom:10px"><div class="baja-opt sel" onclick="selMotivo(this,\'Rotura\')">🔴 Rotura / Daño</div><div class="baja-opt" onclick="selMotivo(this,\'Devolución\')">🔄 Devolución</div><div class="baja-opt" onclick="selMotivo(this,\'Pérdida\')">❓ Pérdida</div><div class="baja-opt" onclick="selMotivo(this,\'Otro\')">📝 Otro</div></div>'
     +'<div class="form-group" style="margin-bottom:10px"><label class="form-label">Buscar producto</label><input type="text" id="baja-q" placeholder="Nombre o código…" oninput="buscarBaja()"></div>'
     +'<div id="baja-r"></div>'
+    +'<div id="baja-variante"></div>'
     +'<div class="form-group" style="margin-top:8px"><label class="form-label">Observación <span style="color:#9A1C1C">*</span> (obligatoria)</label><input type="text" id="baja-obs" placeholder="Ej: Rotura en costuras, encontrado en depósito…"></div>'
     +'<div class="modal-footer"><button class="btn btn-outline" onclick="cerrarModal()">Cerrar</button></div></div>');
   bajaMotivoSel='Rotura';
@@ -1238,20 +1433,46 @@ function selMotivo(el,m){document.querySelectorAll('.baja-opt').forEach(function
 function buscarBaja(){
   var q=document.getElementById('baja-q').value.toLowerCase();
   var r=document.getElementById('baja-r');
+  _bajaProdSel=null;
+  document.getElementById('baja-variante').innerHTML='';
   if(!q){r.innerHTML='';return;}
-  var found=_prods.filter(function(p){return p.nombre.toLowerCase().indexOf(q)>=0||p.codigo.toLowerCase().indexOf(q)>=0;}).slice(0,4);
+  var found=_prods.filter(function(p){return p.nombre.toLowerCase().indexOf(q)>=0||(p.codigo||'').toLowerCase().indexOf(q)>=0;}).slice(0,4);
+  if(!found.length){r.innerHTML='<div style="font-size:13px;color:var(--texto-s)">No encontrado.</div>';return;}
   r.innerHTML=found.map(function(p){
-    return '<div style="display:flex;align-items:center;gap:10px;padding:10px;background:var(--crema);border-radius:10px;margin-bottom:6px">'
-      +'<div style="flex:1"><div style="font-weight:600;font-size:13px">'+p.nombre+'</div><div style="font-size:11px;color:var(--texto-s)">'+p.talle+' / '+p.color+' — Stock: '+p.stock+'</div></div>'
-      +'<input type="number" value="1" min="1" max="'+p.stock+'" style="width:60px" id="bq-'+p.id+'">'
-      +'<button class="btn btn-danger btn-sm" data-id="'+p.id+'" onclick="registrarBaja(this.dataset.id)">Dar de baja</button>'
+    return '<div style="display:flex;align-items:center;gap:10px;padding:10px;background:var(--crema);border-radius:10px;margin-bottom:6px;cursor:pointer;" data-id="'+p.id+'" onclick="selProductoBaja(this.dataset.id)">'
+      +'<div style="flex:1"><div style="font-weight:600;font-size:13px">'+p.nombre+'</div><div style="font-size:11px;color:var(--texto-s)">Stock total: '+stockTotalProd(p.id)+' uds. — '+variantesDe(p.id).length+' talle(s) cargado(s)</div></div>'
+      +'<button class="btn btn-sm btn-outline">Elegir talle →</button>'
       +'</div>';
   }).join('');
 }
 
-async function registrarBaja(id){
+function selProductoBaja(id){
   var p=_prods.find(function(x){return x.id===id;});
-  var qty=parseInt(document.getElementById('bq-'+id).value)||1;
+  if(!p) return;
+  _bajaProdSel=p;
+  var vs=variantesDe(p.id).slice().sort(function(a,b){return tallesIdx(a.talle)-tallesIdx(b.talle);});
+  var v=document.getElementById('baja-variante');
+  if(!vs.length){
+    v.innerHTML='<div style="font-size:13px;color:#9A1C1C;background:#FDEAEA;border-radius:10px;padding:10px 12px;margin-bottom:8px;">"'+p.nombre+'" no tiene talles cargados — agregalos editando el producto.</div>';
+    return;
+  }
+  v.innerHTML='<div style="border:1.5px solid var(--borde);border-radius:10px;padding:12px;margin-bottom:8px;">'
+    +'<div style="font-weight:600;font-size:13px;margin-bottom:8px">'+p.nombre+'</div>'
+    +'<div class="form-row">'
+    +'<div class="form-group"><label class="form-label">Talle</label><select id="baja-talle">'+vs.map(function(vv){return '<option value="'+vv.id+'">'+vv.talle+' — Stock: '+vv.stock+'</option>';}).join('')+'</select></div>'
+    +'<div class="form-group"><label class="form-label">Cantidad</label><input type="number" id="baja-qty" value="1" min="1"></div>'
+    +'</div>'
+    +'<button class="btn btn-danger btn-sm" style="margin-top:10px" onclick="registrarBaja()">Dar de baja</button>'
+    +'</div>';
+}
+
+async function registrarBaja(){
+  var p=_bajaProdSel;
+  var sel=document.getElementById('baja-talle');
+  if(!p||!sel){alert('Elegí un producto y su talle.');return;}
+  var variante=_variantes.find(function(v){return v.id===sel.value;});
+  if(!variante) return;
+  var qty=parseInt(document.getElementById('baja-qty').value)||1;
   var obs=document.getElementById('baja-obs').value.trim();
   if(!obs){
     alert('La observación es obligatoria para registrar una baja.');
@@ -1262,17 +1483,18 @@ async function registrarBaja(id){
   var esDevolucion=/devoluci[oó]n/i.test(bajaMotivoSel);
   var ns;
   if(esDevolucion){
-    ns=(+p.stock||0)+qty;
+    ns=(+variante.stock||0)+qty;
   }else{
-    if(qty>(+p.stock||0)){alert('Stock insuficiente');return;}
-    ns=Math.max(0,(+p.stock||0)-qty);
+    if(qty>(+variante.stock||0)){alert('Stock insuficiente en el talle '+variante.talle);return;}
+    ns=Math.max(0,(+variante.stock||0)-qty);
   }
-  await sb.from('productos').update({stock:ns}).eq('id',id);
-  await sb.from('movimientos').insert({tipo:'baja',producto:p.nombre,talle:p.talle,color:p.color,qty:qty,motivo:bajaMotivoSel+(obs?' — '+obs:''),usuario:_usuarioActual});
-  await sb.from('bajas').insert({producto_id:id,nombre:p.nombre,motivo:bajaMotivoSel,qty:qty,obs:obs});
-  p.stock=ns;
+  await sb.from('variantes').update({stock:ns}).eq('id',variante.id);
+  await sb.from('movimientos').insert({tipo:'baja',producto:p.nombre,talle:variante.talle,qty:qty,motivo:bajaMotivoSel+(obs?' — '+obs:''),usuario:_usuarioActual});
+  await sb.from('bajas').insert({producto_id:p.id,nombre:p.nombre,motivo:bajaMotivoSel,qty:qty,obs:obs});
+  variante.stock=ns;
   cerrarModal();
-  toast('Baja registrada. Stock: '+ns);
+  renderStock();
+  toast('Baja registrada. Stock de talle '+variante.talle+': '+ns);
 }
 
 // ── ETIQUETAS ─────────────────────────────────────────────────────────────────
@@ -1301,28 +1523,59 @@ document.getElementById('etq-nombre').addEventListener('focus',function(){etqCod
 function buscarProductoEtiqueta(){
   var q=document.getElementById('etq-nombre').value.trim();
   var r=document.getElementById('etq-sugs');
-  var query=sb.from('productos').select('nombre,talle,color,precio_min,precio_may');
+  document.getElementById('etq-talles-chips').innerHTML='';
+  var query=sb.from('productos').select('id,nombre,precio_min,precio_may');
   if(q) query=query.ilike('nombre','%'+q+'%').order('nombre').limit(8);
   else query=query.order('id',{ascending:false}).limit(10);
   query.then(function(res){
     var items=res.data||[];
     if(!items.length){r.innerHTML='';return;}
     r.innerHTML=items.map(function(p){
-      return '<div style="padding:8px 12px;border-bottom:1px solid var(--borde);cursor:pointer;font-size:13px;" data-nombre="'+p.nombre+'" data-talle="'+(p.talle||'')+'" data-color="'+(p.color||'')+'" data-pm="'+(p.precio_min||0)+'" data-pmay="'+(p.precio_may||0)+'" onclick="selProductoEtiqueta(this.dataset.nombre,this.dataset.talle,this.dataset.color,this.dataset.pm,this.dataset.pmay)" onmousedown="event.preventDefault()">'
+      return '<div style="padding:8px 12px;border-bottom:1px solid var(--borde);cursor:pointer;font-size:13px;" data-id="'+p.id+'" data-nombre="'+p.nombre+'" data-pm="'+(p.precio_min||0)+'" data-pmay="'+(p.precio_may||0)+'" onclick="selProductoEtiqueta(this.dataset.id,this.dataset.nombre,this.dataset.pm,this.dataset.pmay)" onmousedown="event.preventDefault()">'
         +'<div style="font-weight:600">'+p.nombre+'</div>'
-        +'<div style="font-size:11px;color:var(--texto-s)">'+(p.talle||'—')+' / '+(p.color||'—')+' — '+fmt(p.precio_min||0)+'</div>'
+        +'<div style="font-size:11px;color:var(--texto-s)">'+fmt(p.precio_min||0)+' / '+fmt(p.precio_may||0)+'</div>'
         +'</div>';
     }).join('');
   });
 }
 
-function selProductoEtiqueta(nombre,talle,color,pm,pmay){
+function selProductoEtiqueta(id,nombre,pm,pmay){
   document.getElementById('etq-nombre').value=nombre;
-  if(talle) document.getElementById('etq-talle').value=talle;
-  document.getElementById('etq-color').value=color||'';
   document.getElementById('etq-precio-min').value=pm||'';
   document.getElementById('etq-precio-may').value=pmay||'';
   document.getElementById('etq-sugs').innerHTML='';
+  etqCod='---';
+  cargarTallesEtiqueta(id);
+  actualizarEtiqueta();
+}
+
+async function cargarTallesEtiqueta(prodId){
+  var cont=document.getElementById('etq-talles-chips');
+  cont.innerHTML='<span style="font-size:11px;color:var(--texto-s)">Buscando talles…</span>';
+  var rv=await sb.from('variantes').select('*').eq('producto_id',prodId);
+  var vs=(rv.data||[]).slice().sort(function(a,b){return tallesIdx(a.talle)-tallesIdx(b.talle);});
+  if(!vs.length){
+    cont.innerHTML='<span style="font-size:11px;color:var(--texto-s)">Este producto no tiene talles cargados.</span>';
+    return;
+  }
+  cont.innerHTML='<span style="font-size:10px;font-weight:700;color:var(--texto-s);text-transform:uppercase;letter-spacing:.5px;">Talle a etiquetar:</span>'
+    +vs.map(function(v,i){
+      return '<span class="baja-opt'+(i===0?' sel':'')+'" style="display:inline-flex;margin:0;padding:6px 12px;font-size:12px;" data-talle="'+v.talle+'" onclick="selTalleEtiquetaChip(this)">'+v.talle+' <span style="opacity:.6;margin-left:4px">· stock '+v.stock+'</span></span>';
+    }).join('');
+  selTalleEtiquetaChip(cont.querySelector('.baja-opt'));
+}
+
+function selTalleEtiquetaChip(el){
+  if(!el) return;
+  var cont=document.getElementById('etq-talles-chips');
+  cont.querySelectorAll('.baja-opt').forEach(function(c){c.classList.remove('sel');});
+  el.classList.add('sel');
+  var talle=el.dataset.talle;
+  var sel=document.getElementById('etq-talle');
+  var opt=null;
+  for(var i=0;i<sel.options.length;i++){ if(sel.options[i].value===talle){opt=sel.options[i];break;} }
+  if(!opt){ opt=document.createElement('option'); opt.value=talle; opt.textContent=talle; sel.appendChild(opt); }
+  sel.value=talle;
   etqCod='---';
   actualizarEtiqueta();
 }
@@ -1350,23 +1603,6 @@ function imprimirEtiqueta(){
   var w=window.open('','_blank');
   w.document.write('<html><head><title>Etiquetas</title><style>@page{margin:4mm}body{margin:0;padding:2mm}</style></head><body>'+html+'</body></html>');
   w.document.close();w.print();
-}
-
-async function guardarDesdeEtiqueta(){
-  var n=document.getElementById('etq-nombre').value.trim();
-  if(!n){alert('Completá el nombre');return;}
-  var t=document.getElementById('etq-talle').value;
-  var c=document.getElementById('etq-color').value.trim();
-  var pm=parseFloat(document.getElementById('etq-precio-min').value)||0;
-  var pM=parseFloat(document.getElementById('etq-precio-may').value)||0;
-  var id='P'+Date.now();
-  await sb.from('productos').insert({id:id,codigo:etqCod,nombre:n,talle:t,color:c,precio_min:pm,precio_may:pM,stock:0});
-  toast('"'+n+'" guardado. Usá Ingreso para sumar stock.');
-  etqCod='---';
-  document.getElementById('etq-nombre').value='';
-  document.getElementById('etq-precio-min').value='';
-  document.getElementById('etq-precio-may').value='';
-  actualizarEtiqueta();
 }
 
 // ── VENTA ─────────────────────────────────────────────────────────────────────
@@ -1445,23 +1681,51 @@ function agregarEscaneo(){
   if(!q) return;
   var found=_prods.filter(function(p){return p.codigo.toLowerCase()===q||p.nombre.toLowerCase().indexOf(q)>=0;});
   var sr=document.getElementById('scan-sugs');
-  if(found.length===1){addItem(found[0]);document.getElementById('scan-in').value='';sr.innerHTML='';}
+  if(found.length===1){ document.getElementById('scan-in').value=''; seleccionarProductoVenta(found[0]); }
   else if(found.length>1){
     sr.innerHTML='<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;">'+found.map(function(p){
-      return '<div style="padding:7px 12px;background:var(--crema);border-radius:10px;font-size:12px;cursor:pointer;border:1px solid var(--borde);" data-id="'+p.id+'" onclick="addItemById(this.dataset.id)">'+p.nombre+' — '+p.talle+' / '+p.color+'</div>';
+      return '<div style="padding:7px 12px;background:var(--crema);border-radius:10px;font-size:12px;cursor:pointer;border:1px solid var(--borde);" data-id="'+p.id+'" onclick="addItemById(this.dataset.id)">'+p.nombre+'</div>';
     }).join('')+'</div>';
   } else {
     sr.innerHTML='<div style="font-size:12px;color:#9A1C1C;padding:4px 0">No encontrado</div>';
   }
 }
 
-function addItemById(id){var p=_prods.find(function(x){return x.id===id;});if(p){addItem(p);document.getElementById('scan-in').value='';document.getElementById('scan-sugs').innerHTML='';}}
+function addItemById(id){
+  var p=_prods.find(function(x){return x.id===id;});
+  if(p){ document.getElementById('scan-in').value=''; seleccionarProductoVenta(p); }
+}
 
-function addItem(prod){
-  if((+prod.stock||0)<=0){alert('Sin stock');return;}
-  var ex=ventaActual.items.find(function(i){return i.id===prod.id;});
-  if(ex){if(ex.qty<prod.stock)ex.qty++;else{alert('Sin más stock');return;}}
-  else{var precio=ventaActual.tipoPrecio==='mayorista'?(+prod.precio_may||+prod.precio_min||0):(+prod.precio_min||0);ventaActual.items.push({id:prod.id,nombre:prod.nombre,talle:prod.talle,color:prod.color,precio:precio,qty:1});}
+function seleccionarProductoVenta(prod){
+  var sr=document.getElementById('scan-sugs');
+  var vs=variantesDe(prod.id).filter(function(v){return (+v.stock||0)>0;});
+  if(!vs.length){ sr.innerHTML='<div style="font-size:12px;color:#9A1C1C;padding:4px 0">"'+prod.nombre+'" no tiene stock disponible</div>'; return; }
+  vs=vs.slice().sort(function(a,b){return tallesIdx(a.talle)-tallesIdx(b.talle);});
+  if(vs.length===1){ agregarVarianteAVenta(prod,vs[0]); sr.innerHTML=''; return; }
+  sr.innerHTML='<div style="font-size:11px;color:var(--texto-s);margin-bottom:6px;">"'+prod.nombre+'" — elegí el talle:</div>'
+    +'<div style="display:flex;flex-wrap:wrap;gap:6px;">'+vs.map(function(v){
+      return '<span class="baja-opt" style="display:inline-flex;margin:0;padding:7px 14px;font-size:12px;" data-pid="'+prod.id+'" data-vid="'+v.id+'" onclick="elegirVarianteVenta(this)">'+v.talle+' <span style="opacity:.6;margin-left:4px">· '+v.stock+'</span></span>';
+    }).join('')+'</div>';
+}
+
+function elegirVarianteVenta(el){
+  var prod=_prods.find(function(x){return x.id===el.dataset.pid;});
+  var v=_variantes.find(function(x){return x.id===el.dataset.vid;});
+  if(!prod||!v) return;
+  agregarVarianteAVenta(prod,v);
+  document.getElementById('scan-sugs').innerHTML='';
+}
+
+function agregarVarianteAVenta(prod,variante){
+  if((+variante.stock||0)<=0){alert('Sin stock en el talle '+variante.talle);return;}
+  var ex=ventaActual.items.find(function(i){return i.varianteId===variante.id;});
+  if(ex){
+    if(ex.qty<(+variante.stock||0)) ex.qty++;
+    else { alert('Sin más stock en el talle '+variante.talle); return; }
+  } else {
+    var precio=ventaActual.tipoPrecio==='mayorista'?(+prod.precio_may||+prod.precio_min||0):(+prod.precio_min||0);
+    ventaActual.items.push({varianteId:variante.id,id:prod.id,nombre:prod.nombre,talle:variante.talle,precio:precio,qty:1});
+  }
   renderVenta();
 }
 
@@ -1470,10 +1734,10 @@ function renderVenta(){
   if(!ventaActual.items.length){el.innerHTML='<div class="empty" style="padding:1.5rem">Escaneá o buscá un producto</div>';document.getElementById('venta-total').textContent='$0';return;}
   el.innerHTML=ventaActual.items.map(function(i){
     return '<div class="venta-item">'
-      +'<div style="flex:1"><div style="font-weight:700;font-size:13px">'+i.nombre+'</div><div style="font-size:11px;color:var(--texto-s)">'+i.talle+' / '+i.color+'</div></div>'
-      +'<div style="display:flex;align-items:center;gap:6px"><button class="qty-btn" data-id="'+i.id+'" data-d="-1" onclick="cambQty(this.dataset.id,-1)">−</button><span style="font-weight:700;min-width:20px;text-align:center">'+i.qty+'</span><button class="qty-btn" data-id="'+i.id+'" onclick="cambQty(this.dataset.id,1)">+</button></div>'
+      +'<div style="flex:1"><div style="font-weight:700;font-size:13px">'+i.nombre+'</div><div style="font-size:11px;color:var(--texto-s)">Talle '+i.talle+'</div></div>'
+      +'<div style="display:flex;align-items:center;gap:6px"><button class="qty-btn" data-vid="'+i.varianteId+'" data-d="-1" onclick="cambQty(this.dataset.vid,-1)">−</button><span style="font-weight:700;min-width:20px;text-align:center">'+i.qty+'</span><button class="qty-btn" data-vid="'+i.varianteId+'" onclick="cambQty(this.dataset.vid,1)">+</button></div>'
       +'<div style="font-weight:700;min-width:80px;text-align:right">'+fmt(i.precio*i.qty)+'</div>'
-      +'<button class="btn btn-sm btn-danger" data-id="'+i.id+'" onclick="quitarItem(this.dataset.id)">🗑️</button>'
+      +'<button class="btn btn-sm btn-danger" data-vid="'+i.varianteId+'" onclick="quitarItem(this.dataset.vid)">🗑️</button>'
       +'</div>';
   }).join('');
   var subtotal=ventaActual.items.reduce(function(a,i){return a+i.precio*i.qty;},0);
@@ -1503,14 +1767,14 @@ function aplicarDescuento(){
   }
 }
 
-function cambQty(id,d){
-  var i=ventaActual.items.find(function(x){return x.id===id;});
-  var p=_prods.find(function(x){return x.id===id;});
-  if(!i||!p) return;
-  i.qty=Math.max(1,Math.min(i.qty+d,+p.stock||1));
+function cambQty(varianteId,d){
+  var i=ventaActual.items.find(function(x){return x.varianteId===varianteId;});
+  var v=_variantes.find(function(x){return x.id===varianteId;});
+  if(!i||!v) return;
+  i.qty=Math.max(1,Math.min(i.qty+d,+v.stock||1));
   renderVenta();
 }
-function quitarItem(id){ventaActual.items=ventaActual.items.filter(function(x){return x.id!==id;});renderVenta();}
+function quitarItem(varianteId){ventaActual.items=ventaActual.items.filter(function(x){return x.varianteId!==varianteId;});renderVenta();}
 
 function buscarClienteVenta(){
   var q=document.getElementById('venta-cli-q').value.toLowerCase();
@@ -1685,14 +1949,14 @@ async function procesarVenta(){
   if(r.error){toast('Error al guardar venta');return;}
   for(var ii=0;ii<ventaActual.items.length;ii++){
     var item=ventaActual.items[ii];
-    var p=_prods.find(function(x){return x.id===item.id;});
-    if(p){
-      var ns=Math.max(0,(+p.stock||0)-item.qty);
-      await sb.from('productos').update({stock:ns}).eq('id',p.id);
-      await sb.from('movimientos').insert({tipo:'venta',producto:item.nombre,talle:item.talle,color:item.color,qty:item.qty,motivo:'Venta #'+num,usuario:_usuarioActual});
-      p.stock=ns;
+    var v=_variantes.find(function(x){return x.id===item.varianteId;});
+    if(v){
+      var ns=Math.max(0,(+v.stock||0)-item.qty);
+      await sb.from('variantes').update({stock:ns}).eq('id',v.id);
+      await sb.from('movimientos').insert({tipo:'venta',producto:item.nombre,talle:item.talle,qty:item.qty,motivo:'Venta #'+num,usuario:_usuarioActual});
+      v.stock=ns;
     }
-    await sb.from('items_ventas').insert({venta_num:num,producto_id:item.id,nombre:item.nombre,talle:item.talle,color:item.color,precio:item.precio,qty:item.qty});
+    await sb.from('items_ventas').insert({venta_num:num,producto_id:item.id,nombre:item.nombre,talle:item.talle,precio:item.precio,qty:item.qty});
   }
   // Update cuenta corriente saldo
   var pagoFinal=pagoCombinado||ventaActual.pago||'';
@@ -1731,7 +1995,7 @@ async function procesarVenta(){
 }
 
 function mostrarRecibo(v){
-  var lineas=v.items.map(function(i){return i.nombre+'\n  '+i.talle+' / '+i.color+'\n  '+i.qty+' x '+fmt(i.precio)+' = '+fmt(i.precio*i.qty);}).join('\n');
+  var lineas=v.items.map(function(i){return i.nombre+'\n  Talle '+i.talle+'\n  '+i.qty+' x '+fmt(i.precio)+' = '+fmt(i.precio*i.qty);}).join('\n');
   abrirModal('<div class="modal"><div class="modal-title">🎀 Venta #'+v.num+'</div><div class="recibo">    * MINI ENCANTO *\n    Ropa de bebé y niños\n──────────────────────\n'+fmtF(v.fecha)+'\nCliente: '+(v.cliente||'Consumidor final')+(v.cliente_tel?' ('+v.cliente_tel+')':'')+'\nPago: '+v.pago+' | '+v.tipo_precio+'\n──────────────────────\n'+lineas+'\n──────────────────────\nTOTAL: '+fmt(v.total)+'\n══════════════════════</div><div class="modal-footer"><button class="btn btn-outline" onclick="cerrarModal()">Cerrar</button><button class="btn btn-verde" onclick="window.print()">🖨️ Imprimir</button></div></div>');
 }
 
@@ -1844,7 +2108,7 @@ async function verTicket(num){
   var itemsHTML=items.length?items.map(function(i){
     return '<tr>'
       +'<td style="font-weight:600">'+i.nombre+'</td>'
-      +'<td style="color:var(--texto-s)">'+(i.talle&&i.talle!=='—'?i.talle:'')+(i.color&&i.color!=='—'?' / '+i.color:'')+'</td>'
+      +'<td style="color:var(--texto-s)">'+(i.talle&&i.talle!=='—'?i.talle:'')+'</td>'
       +'<td style="text-align:center">'+i.qty+'</td>'
       +'<td style="text-align:right">'+fmt(i.precio)+'</td>'
       +'<td style="text-align:right;font-weight:700">'+fmt((+i.precio||0)*(+i.qty||0))+'</td>'
@@ -2040,8 +2304,8 @@ async function renderInformes(){
   var ing=all.filter(function(m){return m.tipo==='ingreso';}).reduce(function(a,m){return a+(+m.qty||0);},0);
   var ven=all.filter(function(m){return m.tipo==='venta';}).reduce(function(a,m){return a+(+m.qty||0);},0);
   var baj=all.filter(function(m){return m.tipo==='baja';}).reduce(function(a,m){return a+(+m.qty||0);},0);
-  var rStock=await sb.from('productos').select('stock');
-  var stockTotal=(rStock.data||[]).reduce(function(a,p){return a+(+p.stock||0);},0);
+  var rStock=await sb.from('variantes').select('stock');
+  var stockTotal=(rStock.data||[]).reduce(function(a,v){return a+(+v.stock||0);},0);
   document.getElementById('inf-m-ing').textContent=ing;
   document.getElementById('inf-m-ven').textContent=ven;
   document.getElementById('inf-m-baj').textContent=baj;
@@ -2057,8 +2321,8 @@ async function renderInformes(){
     var iconos={ingreso:'📥',venta:'🛒',baja:'📉'};
     var colores={ingreso:'badge-ok',venta:'badge-rosa',baja:'badge-out'};
     var labels={ingreso:'Ingreso',venta:'Venta',baja:'Baja'};
-    t.innerHTML='<table><thead><tr><th>Fecha</th><th>Tipo</th><th>Producto</th><th>Talle</th><th>Color</th><th>Cant.</th><th>Motivo</th><th>Usuario</th></tr></thead><tbody>'+
-      movs.map(function(m){return '<tr><td style="font-size:12px;color:var(--texto-s)">'+fmtF(m.fecha)+'</td><td><span class="badge '+colores[m.tipo]+'">'+iconos[m.tipo]+' '+labels[m.tipo]+'</span></td><td style="font-weight:600">'+m.producto+'</td><td>'+m.talle+'</td><td>'+m.color+'</td><td style="font-weight:700;text-align:center">'+(m.tipo==='ingreso'?'+':'-')+(+m.qty||0)+'</td><td style="font-size:12px;color:var(--texto-s)">'+m.motivo+'</td><td style="font-size:11px;color:var(--texto-s)">'+(m.usuario||'—')+'</td></tr>';}).join('')+'</tbody></table>';
+    t.innerHTML='<table><thead><tr><th>Fecha</th><th>Tipo</th><th>Producto</th><th>Talle</th><th>Cant.</th><th>Motivo</th><th>Usuario</th></tr></thead><tbody>'+
+      movs.map(function(m){return '<tr><td style="font-size:12px;color:var(--texto-s)">'+fmtF(m.fecha)+'</td><td><span class="badge '+colores[m.tipo]+'">'+iconos[m.tipo]+' '+labels[m.tipo]+'</span></td><td style="font-weight:600">'+m.producto+'</td><td>'+m.talle+'</td><td style="font-weight:700;text-align:center">'+(m.tipo==='ingreso'?'+':'-')+(+m.qty||0)+'</td><td style="font-size:12px;color:var(--texto-s)">'+m.motivo+'</td><td style="font-size:11px;color:var(--texto-s)">'+(m.usuario||'—')+'</td></tr>';}).join('')+'</tbody></table>';
   }
 
   var rG=await sb.from('movimientos').select('fecha,tipo,qty').gte('fecha',desde.toISOString());
@@ -2560,12 +2824,12 @@ async function verHistorialPrecios(id){
 var _segProdId = null;
 var _segProdNombre = '';
 
-async function abrirSeguimiento(id,nombre,talle,color,stock){
+async function abrirSeguimiento(id,nombre,stock){
   _segProdId = id;
   _segProdNombre = nombre;
   var seg = document.getElementById('page-seguimiento');
   seg.style.display = 'flex';
-  document.getElementById('seg-titulo').textContent = '📊 ' + nombre + ' — ' + talle + ' / ' + color;
+  document.getElementById('seg-titulo').textContent = '📊 ' + nombre;
   document.getElementById('seg-info').innerHTML =
     '<div style="text-align:center"><div style="font-size:11px;color:var(--texto-s);font-weight:700">Stock actual</div><div style="font-size:22px;font-weight:700;color:var(--texto)">'+stock+'</div><div style="font-size:11px;color:var(--texto-s)">unidades</div></div>'
     +'<div style="text-align:center" id="seg-stat-ing"><div style="font-size:11px;color:var(--texto-s);font-weight:700">Ingresado</div><div style="font-size:22px;font-weight:700;color:var(--verde-d)">—</div></div>'
@@ -2665,14 +2929,14 @@ async function exportarInformeExcel(){
   var r=await sb.from('movimientos').select('*').gte('fecha',desde.toISOString()).order('fecha',{ascending:false});
   var movs=r.data||[];
   if(!movs.length){alert('Sin movimientos en este periodo');return;}
-  var cols=['Fecha','Hora','Tipo','Producto','Talle','Color','Cantidad','Motivo','Usuario'];
+  var cols=['Fecha','Hora','Tipo','Producto','Talle','Cantidad','Motivo','Usuario'];
   var rows=movs.map(function(m){
     var d=new Date(m.fecha);
     var fecha=d.toLocaleDateString('es-AR',{day:'2-digit',month:'2-digit',year:'numeric'});
     var hora=d.toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'});
     var tipo=m.tipo==='ingreso'?'Ingreso':m.tipo==='venta'?'Venta':'Baja';
     var cant=(m.tipo==='ingreso'?'+':'-')+(+m.qty||0);
-    return [fecha,hora,tipo,m.producto||'',m.talle&&m.talle!=='—'?m.talle:'',m.color&&m.color!=='—'?m.color:'',cant,m.motivo||'',m.usuario||''];
+    return [fecha,hora,tipo,m.producto||'',m.talle&&m.talle!=='—'?m.talle:'',cant,m.motivo||'',m.usuario||''];
   });
   descargarExcel(cols,rows,'Mini_Encanto_Movimientos_'+labels[periodo]);
 }
