@@ -12,8 +12,8 @@
 <link rel="manifest" href="/manifest.json">
 <title>Mini Encanto</title>
 <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;500;600;700&family=Playfair+Display:wght@600&display=swap" rel="stylesheet">
-<script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcode/build/qrcode.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 
@@ -84,6 +84,13 @@ input:focus,select:focus{border-color:var(--rosa);}
 .recibo{font-family:'Courier New',monospace;font-size:12px;line-height:2;background:var(--crema);border-radius:12px;padding:1.5rem;border:1px dashed var(--borde);white-space:pre;}
 .scan-wrap{display:flex;gap:10px;align-items:center;}
 .scan-wrap input{flex:1;font-size:15px;}
+.scan-sugs-box{background:#fff;border:1.5px solid var(--borde);border-radius:12px;overflow:hidden;box-shadow:0 6px 20px rgba(61,53,48,.12);margin-top:6px;}
+.scan-sug-item{display:flex;align-items:center;gap:10px;padding:10px 14px;cursor:pointer;border-bottom:1px solid var(--borde);transition:background .1s;}
+.scan-sug-item:last-child{border-bottom:none;}
+.scan-sug-item:hover{background:var(--crema);}
+.scan-talle-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:8px 4px;}
+.scan-talle-row select{padding:7px 10px;border-radius:10px;border:1.5px solid var(--borde);font-family:'Nunito',sans-serif;font-size:13px;background:#fff;outline:none;}
+.scan-talle-row select:focus{border-color:var(--rosa);}
 .empty{text-align:center;padding:3rem 1rem;color:var(--texto-s);font-size:14px;}
 .empty-icon{font-size:40px;margin-bottom:10px;}
 .loading{text-align:center;padding:2rem;}
@@ -226,7 +233,8 @@ input:focus,select:focus{border-color:var(--rosa);}
   /* ── Scan wrap ── */
   .scan-wrap{flex-wrap:wrap;gap:8px;}
   .scan-wrap input{width:100%;}
-  .scan-wrap .btn{width:100%;justify-content:center;}
+  .scan-talle-row{flex-wrap:wrap;}
+  .scan-talle-row select,.scan-talle-row .btn{width:100%;}
 
   /* ── Historial ── */
   #page-historial .metrics{grid-template-columns:1fr 1fr 1fr;}
@@ -440,7 +448,7 @@ input:focus,select:focus{border-color:var(--rosa);}
       <div id="etq-talles-chips" style="display:flex;flex-wrap:wrap;align-items:center;gap:6px;"></div>
       <div class="form-row">
         <div class="form-group"><label class="form-label">Color <span style="font-weight:400;text-transform:none;letter-spacing:0">(opcional, solo para la etiqueta)</span></label><input type="text" id="etq-color" placeholder="Ej: Rosa" oninput="actualizarEtiqueta()"></div>
-        <div class="form-group"><label class="form-label">Cantidad</label><input type="number" id="etq-cant" value="1" min="1"></div>
+        <div class="form-group"><label class="form-label">Cantidad de etiquetas a imprimir</label><input type="number" id="etq-cant" value="1" min="1"></div>
       </div>
       <div class="form-row">
         <div class="form-group"><label class="form-label">💗 Minorista</label><input type="number" id="etq-precio-min" placeholder="0" oninput="actualizarEtiqueta()"></div>
@@ -503,10 +511,13 @@ input:focus,select:focus{border-color:var(--rosa);}
         <div class="card-title">Escanear o buscar</div>
         <div class="scan-wrap">
           <span style="font-size:22px;">📷</span>
-          <input type="text" id="scan-in" placeholder="Escaneá o escribí…" onkeydown="if(event.key==='Enter')agregarEscaneo()">
-          <button class="btn btn-rosa" onclick="agregarEscaneo()">+ Agregar</button>
+          <input type="text" id="scan-in" placeholder="Escaneá un código o escribí un nombre…"
+            oninput="autocompletarVenta(this.value)"
+            onkeydown="if(event.key==='Enter'){event.preventDefault();agregarEscaneo();}"
+            onblur="setTimeout(function(){document.getElementById('scan-sugs').innerHTML=''},200)"
+            autocomplete="off">
         </div>
-        <div id="scan-sugs" style="margin-top:8px;"></div>
+        <div id="scan-sugs"></div>
       </div>
       <div class="card"><div class="card-title">Artículos</div><div id="venta-lista"><div class="empty" style="padding:1.5rem;">Escaneá o buscá un producto</div></div></div>
     </div>
@@ -838,7 +849,7 @@ function nav(p){
   if(p==='dashboard') cargarDashboard();
   if(p==='caja') renderCaja();
   if(p==='historial-caja') renderHistorialCajas();
-  if(p==='venta') verificarCajaParaVenta();
+  if(p==='venta'){ verificarCajaParaVenta(); _asegurarProds(); }
   if(p==='usuarios') cargarUsuarios();
   if(p==='stock'){
     _stockFiltroEspecial=null;
@@ -1676,44 +1687,121 @@ function actualizarDivision(){
   }
 }
 
-function agregarEscaneo(){
-  var q=document.getElementById('scan-in').value.trim().toLowerCase();
-  if(!q) return;
-  var found=_prods.filter(function(p){return p.codigo.toLowerCase()===q||p.nombre.toLowerCase().indexOf(q)>=0;});
-  var sr=document.getElementById('scan-sugs');
-  if(found.length===1){ document.getElementById('scan-in').value=''; seleccionarProductoVenta(found[0]); }
-  else if(found.length>1){
-    sr.innerHTML='<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;">'+found.map(function(p){
-      return '<div style="padding:7px 12px;background:var(--crema);border-radius:10px;font-size:12px;cursor:pointer;border:1px solid var(--borde);" data-id="'+p.id+'" onclick="addItemById(this.dataset.id)">'+p.nombre+'</div>';
-    }).join('')+'</div>';
-  } else {
-    sr.innerHTML='<div style="font-size:12px;color:#9A1C1C;padding:4px 0">No encontrado</div>';
-  }
+// ── Búsqueda en venta ─────────────────────────────────────────────────────────
+
+async function _asegurarProds(){
+  if(_prods.length) return;
+  var rp=await sb.from('productos').select('*').order('nombre');
+  var rv=await sb.from('variantes').select('*');
+  _prods=rp.data||[];
+  _variantes=rv.data||[];
 }
 
-function addItemById(id){
+var _acTimer=null;
+async function autocompletarVenta(q){
+  clearTimeout(_acTimer);
+  var sr=document.getElementById('scan-sugs');
+  q=(q||'').trim();
+  if(!q){sr.innerHTML='';return;}
+  _acTimer=setTimeout(async function(){
+    await _asegurarProds();
+    var ql=q.toLowerCase();
+    var found=_prods.filter(function(p){
+      return p.nombre.toLowerCase().indexOf(ql)>=0;
+    }).slice(0,7);
+    if(!found.length){sr.innerHTML='';return;}
+    sr.innerHTML='<div class="scan-sugs-box">'+found.map(function(p){
+      var stock=stockTotalProd(p.id);
+      var stk=stock===0
+        ?'<span style="color:#9A1C1C;font-size:11px">Sin stock</span>'
+        :'<span style="color:var(--verde-d);font-size:11px">'+stock+' uds.</span>';
+      return '<div class="scan-sug-item" onmousedown="event.preventDefault();elegirSugerencia(\''+p.id+'\')">'
+        +'<div style="flex:1"><div style="font-weight:600;font-size:13px">'+p.nombre+'</div>'
+        +(p.codigo?'<div style="font-size:10px;color:var(--gris);font-family:monospace">'+p.codigo+'</div>':'')
+        +'</div>'+stk+'</div>';
+    }).join('')+'</div>';
+  },200);
+}
+
+function elegirSugerencia(id){
   var p=_prods.find(function(x){return x.id===id;});
-  if(p){ document.getElementById('scan-in').value=''; seleccionarProductoVenta(p); }
+  if(!p) return;
+  document.getElementById('scan-sugs').innerHTML='';
+  document.getElementById('scan-in').value='';
+  seleccionarProductoVenta(p);
+}
+
+async function agregarEscaneo(){
+  clearTimeout(_acTimer);
+  var q=document.getElementById('scan-in').value.trim();
+  if(!q) return;
+  var sr=document.getElementById('scan-sugs');
+  await _asegurarProds();
+
+  // Búsqueda por código exacto en caché local
+  var prod=_prods.find(function(p){
+    return (p.codigo||'').toLowerCase()===q.toLowerCase();
+  });
+
+  // Si no está en caché, consultar Supabase por código
+  if(!prod){
+    var r=await sb.from('productos').select('*').ilike('codigo',q).limit(1);
+    if(r.data&&r.data.length){
+      prod=r.data[0];
+      if(!_prods.find(function(p){return p.id===prod.id;})) _prods.push(prod);
+      var rv=await sb.from('variantes').select('*').eq('producto_id',prod.id);
+      (rv.data||[]).forEach(function(v){if(!_variantes.find(function(x){return x.id===v.id;}))_variantes.push(v);});
+    }
+  }
+
+  if(prod){
+    document.getElementById('scan-in').value='';
+    sr.innerHTML='';
+    seleccionarProductoVenta(prod);
+  } else {
+    sr.innerHTML='<div style="font-size:12px;color:#9A1C1C;padding:6px 2px;font-weight:600">❌ Código no encontrado: "'+q+'"</div>';
+  }
 }
 
 function seleccionarProductoVenta(prod){
   var sr=document.getElementById('scan-sugs');
   var vs=variantesDe(prod.id).filter(function(v){return (+v.stock||0)>0;});
-  if(!vs.length){ sr.innerHTML='<div style="font-size:12px;color:#9A1C1C;padding:4px 0">"'+prod.nombre+'" no tiene stock disponible</div>'; return; }
+  if(!vs.length){
+    sr.innerHTML='<div style="font-size:12px;color:#9A1C1C;padding:6px 2px;font-weight:600">Sin stock disponible para "'+prod.nombre+'"</div>';
+    return;
+  }
   vs=vs.slice().sort(function(a,b){return tallesIdx(a.talle)-tallesIdx(b.talle);});
-  if(vs.length===1){ agregarVarianteAVenta(prod,vs[0]); sr.innerHTML=''; return; }
-  sr.innerHTML='<div style="font-size:11px;color:var(--texto-s);margin-bottom:6px;">"'+prod.nombre+'" — elegí el talle:</div>'
-    +'<div style="display:flex;flex-wrap:wrap;gap:6px;">'+vs.map(function(v){
-      return '<span class="baja-opt" style="display:inline-flex;margin:0;padding:7px 14px;font-size:12px;" data-pid="'+prod.id+'" data-vid="'+v.id+'" onclick="elegirVarianteVenta(this)">'+v.talle+' <span style="opacity:.6;margin-left:4px">· '+v.stock+'</span></span>';
-    }).join('')+'</div>';
+  // Una sola variante: agregar directo
+  if(vs.length===1){
+    agregarVarianteAVenta(prod,vs[0]);
+    sr.innerHTML='';
+    document.getElementById('scan-in').value='';
+    document.getElementById('scan-in').focus();
+    return;
+  }
+  // Múltiples variantes: dropdown
+  var opts=vs.map(function(v){
+    return '<option value="'+v.id+'">'+v.talle+' — '+v.stock+' disp.</option>';
+  }).join('');
+  sr.innerHTML='<div class="scan-talle-row">'
+    +'<span style="font-size:13px;font-weight:600;color:var(--texto-s)">'+prod.nombre+'</span>'
+    +'<span style="font-size:12px;color:var(--gris)">Talle:</span>'
+    +'<select id="talle-pick">'+opts+'</select>'
+    +'<button class="btn btn-rosa btn-sm" onclick="confirmarTallePick(\''+prod.id+'\')">Agregar →</button>'
+    +'</div>';
+  document.getElementById('talle-pick').focus();
 }
 
-function elegirVarianteVenta(el){
-  var prod=_prods.find(function(x){return x.id===el.dataset.pid;});
-  var v=_variantes.find(function(x){return x.id===el.dataset.vid;});
-  if(!prod||!v) return;
+function confirmarTallePick(prodId){
+  var prod=_prods.find(function(p){return p.id===prodId;});
+  var sel=document.getElementById('talle-pick');
+  if(!prod||!sel) return;
+  var v=_variantes.find(function(x){return x.id===sel.value;});
+  if(!v) return;
   agregarVarianteAVenta(prod,v);
   document.getElementById('scan-sugs').innerHTML='';
+  document.getElementById('scan-in').value='';
+  document.getElementById('scan-in').focus();
 }
 
 function agregarVarianteAVenta(prod,variante){
@@ -1890,7 +1978,7 @@ function mostrarPantallaCobro(tipo){
     inner='<div style="text-align:center;padding:.5rem">'
       +'<div style="font-size:40px;margin-bottom:.5rem">📲</div>'
       +'<div style="font-size:22px;font-weight:700;margin-bottom:4px">'+fmt(total)+'</div>'
-      +'<div style="font-size:14px;color:var(--texto-s);margin-bottom:1.5rem">Mostrá el QR al cliente para que escanee con su app</div>'
+      +'<div style="font-size:14px;color:var(--texto-s);margin-bottom:1.5rem">Mostrá el código al cliente para que escanee con su app</div>'
       +'<div style="display:inline-block;background:#fff;border:3px solid #009EE3;border-radius:16px;padding:16px;margin-bottom:1rem">'
       +'<div style="font-size:11px;font-weight:700;color:#009EE3;letter-spacing:1px;margin-bottom:8px;">🔵 MERCADO PAGO</div>'
       +'<canvas id="qr-mp" style="display:block;"></canvas>'
@@ -1923,7 +2011,7 @@ function mostrarPantallaCobro(tipo){
   if(tipo==='transferencia'){
     setTimeout(function(){
       var c=document.getElementById('qr-mp');
-      if(c&&mp)QRCode.toCanvas(c,mp,{width:200,margin:2,color:{dark:'#009EE3',light:'#ffffff'}},function(){});
+      if(c&&mp){try{QRCode.toCanvas(c,mp,{width:200,margin:2,color:{dark:'#009EE3',light:'#ffffff'}});}catch(e){}}
     },300);
   }
 }
