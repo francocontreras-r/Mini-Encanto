@@ -1166,6 +1166,8 @@ async function guardarProd(){
   var cat=getCat(catV);
   var pm=parseFloat(document.getElementById('np-pm').value)||0;
   var pM=parseFloat(document.getElementById('np-pM').value)||0;
+  // costo se lee para cálculos del formulario pero NO se envía al insert
+  // porque la columna no existe en la tabla productos
   var ts=Date.now();
   var cod='ME'+n.substring(0,4).toUpperCase().replace(/[^A-Z0-9]/g,'')+String(ts).slice(-5);
   var id='P'+ts;
@@ -1690,7 +1692,10 @@ function actualizarDivision(){
 // ── Búsqueda en venta ─────────────────────────────────────────────────────────
 
 async function _asegurarProds(){
-  if(_prods.length) return;
+  // Verificar que AMBOS arrays estén cargados para evitar race condition:
+  // si _prods ya tiene datos pero _variantes todavía no (llamada parcial previa),
+  // forzamos recarga para que los productos muestren su stock correctamente.
+  if(_prods.length && _variantes.length) return;
   var rp=await sb.from('productos').select('*').order('nombre');
   var rv=await sb.from('variantes').select('*');
   _prods=rp.data||[];
