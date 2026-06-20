@@ -1706,13 +1706,13 @@ var _acTimer=null;
 async function autocompletarVenta(q){
   clearTimeout(_acTimer);
   var sr=document.getElementById('scan-sugs');
-  q=(q||'').trim();
+  q=(q||'').trim().replace(/\s+/g,' ');
   if(!q){sr.innerHTML='';return;}
   _acTimer=setTimeout(async function(){
     await _asegurarProds();
     var ql=q.toLowerCase();
     var found=_prods.filter(function(p){
-      return p.nombre.toLowerCase().indexOf(ql)>=0;
+      return p.nombre.toLowerCase().replace(/\s+/g,' ').indexOf(ql)>=0;
     }).slice(0,7);
     if(!found.length){sr.innerHTML='';return;}
     sr.innerHTML='<div class="scan-sugs-box">'+found.map(function(p){
@@ -1748,11 +1748,11 @@ async function agregarEscaneo(){
     return (p.codigo||'').toLowerCase()===q.toLowerCase();
   });
 
-  // 2. Si no encontró por código, buscar por nombre en caché
+  // 2. Si no encontró por código, buscar por nombre en caché (normaliza espacios múltiples)
   if(!prod){
-    var ql=q.toLowerCase();
+    var ql=q.toLowerCase().replace(/\s+/g,' ');
     var porNombre=_prods.filter(function(p){
-      return p.nombre.toLowerCase().indexOf(ql)>=0;
+      return p.nombre.toLowerCase().replace(/\s+/g,' ').indexOf(ql)>=0;
     });
     if(porNombre.length===1){
       prod=porNombre[0];
