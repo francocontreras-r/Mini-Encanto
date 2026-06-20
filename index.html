@@ -514,7 +514,7 @@ input:focus,select:focus{border-color:var(--rosa);}
           <input type="text" id="scan-in" placeholder="Escaneá un código o escribí un nombre…"
             oninput="autocompletarVenta(this.value)"
             onkeydown="if(event.key==='Enter'){event.preventDefault();agregarEscaneo();}"
-            onblur="setTimeout(function(){document.getElementById('scan-sugs').innerHTML=''},200)"
+            onblur="setTimeout(function(){if(!document.getElementById('talle-pick'))document.getElementById('scan-sugs').innerHTML='';},200)"
             autocomplete="off">
         </div>
         <div id="scan-sugs"></div>
