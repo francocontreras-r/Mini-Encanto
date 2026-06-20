@@ -1743,12 +1743,37 @@ async function agregarEscaneo(){
   var sr=document.getElementById('scan-sugs');
   await _asegurarProds();
 
-  // Búsqueda por código exacto en caché local
+  // 1. Búsqueda por código exacto en caché local
   var prod=_prods.find(function(p){
     return (p.codigo||'').toLowerCase()===q.toLowerCase();
   });
 
-  // Si no está en caché, consultar Supabase por código
+  // 2. Si no encontró por código, buscar por nombre en caché
+  if(!prod){
+    var ql=q.toLowerCase();
+    var porNombre=_prods.filter(function(p){
+      return p.nombre.toLowerCase().indexOf(ql)>=0;
+    });
+    if(porNombre.length===1){
+      prod=porNombre[0];
+    } else if(porNombre.length>1){
+      // Múltiples coincidencias por nombre: mostrar dropdown de sugerencias
+      var opts=porNombre.slice(0,7).map(function(p){
+        var stock=stockTotalProd(p.id);
+        var stk=stock===0
+          ?'<span style="color:#9A1C1C;font-size:11px">Sin stock</span>'
+          :'<span style="color:var(--verde-d);font-size:11px">'+stock+' uds.</span>';
+        return '<div class="scan-sug-item" onmousedown="event.preventDefault();elegirSugerencia(\''+p.id+'\')">'
+          +'<div style="flex:1"><div style="font-weight:600;font-size:13px">'+p.nombre+'</div>'
+          +(p.codigo?'<div style="font-size:10px;color:var(--gris);font-family:monospace">'+p.codigo+'</div>':'')
+          +'</div>'+stk+'</div>';
+      }).join('');
+      sr.innerHTML='<div class="scan-sugs-box">'+opts+'</div>';
+      return;
+    }
+  }
+
+  // 3. Si aún no encontró, consultar Supabase por código exacto
   if(!prod){
     var r=await sb.from('productos').select('*').ilike('codigo',q).limit(1);
     if(r.data&&r.data.length){
@@ -1764,7 +1789,7 @@ async function agregarEscaneo(){
     sr.innerHTML='';
     seleccionarProductoVenta(prod);
   } else {
-    sr.innerHTML='<div style="font-size:12px;color:#9A1C1C;padding:6px 2px;font-weight:600">❌ Código no encontrado: "'+q+'"</div>';
+    sr.innerHTML='<div style="font-size:12px;color:#9A1C1C;padding:6px 2px;font-weight:600">❌ No encontrado: "'+q+'"</div>';
   }
 }
 
