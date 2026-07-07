@@ -478,7 +478,12 @@ input:focus,select:focus{border-color:var(--rosa);}
   <div class="page-header">
     <div><div class="page-title">Informes de stock</div></div>
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-      <select id="inf-periodo" onchange="renderInformes()" style="width:160px;"><option value="dia">Hoy</option><option value="semana" selected>Esta semana</option><option value="mes">Este mes</option><option value="todo">Todo</option></select>
+      <select id="inf-periodo" onchange="onInfPeriodoChange()" style="width:160px;"><option value="dia">Hoy</option><option value="semana" selected>Esta semana</option><option value="mes">Este mes</option><option value="todo">Todo</option><option value="personalizado">📅 Personalizado</option></select>
+      <div id="inf-rango" style="display:none;gap:6px;align-items:center;">
+        <input type="date" id="inf-desde" onchange="renderInformes()" style="width:150px;">
+        <span style="font-size:12px;color:var(--texto-s)">a</span>
+        <input type="date" id="inf-hasta" onchange="renderInformes()" style="width:150px;">
+      </div>
       <button class="btn btn-outline" onclick="exportarInformeExcel()">📥 Descargar Excel</button>
     </div>
   </div>
@@ -2182,7 +2187,16 @@ function mostrarRecibo(v){
 }
 
 // ── HISTORIAL ─────────────────────────────────────────────────────────────────
-var _histFiltro = 'todo'; // 'hoy', 'mes', 'todo'
+var _histFiltro = 'todo'; // 'hoy', 'mes', 'todo', 'personalizado'
+var _histDesde = '', _histHasta = ''; // fechas "yyyy-mm-dd" para el modo personalizado
+
+function irHistorialPersonalizado(){
+  _histFiltro='personalizado';
+  if(!_histDesde){_histDesde=hoyISO();_histHasta=hoyISO();}
+  renderHistorial();
+}
+function setHistDesde(v){_histDesde=v;_histFiltro='personalizado';renderHistorial();}
+function setHistHasta(v){_histHasta=v;_histFiltro='personalizado';renderHistorial();}
 
 function filtrarHistorialHoy(){
   _histFiltro = 'hoy';
@@ -2200,6 +2214,10 @@ async function renderHistorial(){
   var filtroLabel='Todo el historial';
   if(_histFiltro==='hoy'){query=query.gte('fecha',hoy.toISOString());filtroLabel='Ventas de hoy';}
   else if(_histFiltro==='mes'){query=query.gte('fecha',mesIni.toISOString());filtroLabel='Ventas del mes';}
+  else if(_histFiltro==='personalizado'){
+    var rpH=rangoDesdeStrings(_histDesde,_histHasta);
+    if(rpH){query=aplicarRango(query,rpH.desde,rpH.hasta);filtroLabel=rpH.label;}
+  }
   var r=await query;
   var ventas=r.data||[];
   var total=ventas.reduce(function(a,v){return a+(+v.total||0);},0);
@@ -2235,11 +2253,18 @@ async function renderHistorial(){
   if(mc)mc.innerHTML=mediosHTML;
 
   var t=document.getElementById('historial-tabla');
+  var btnCls=function(f){return 'btn btn-sm '+(_histFiltro===f?'btn-rosa':'btn-outline');};
   var filterBar='<div style="display:flex;gap:8px;margin-bottom:1rem;align-items:center;flex-wrap:wrap;">'
     +'<span style="font-size:13px;font-weight:700;color:var(--texto-s)">Periodo: <span style="color:var(--rosa-d)">'+filtroLabel+'</span></span>'
-    +'<button class="btn btn-sm btn-outline" onclick="irHistorialHoy()">Hoy</button>'
-    +'<button class="btn btn-sm btn-outline" onclick="irHistorialMes()">Este mes</button>'
-    +'<button class="btn btn-sm btn-outline" onclick="irHistorialTodo()">Todo</button>'
+    +'<button class="'+btnCls('hoy')+'" onclick="irHistorialHoy()">Hoy</button>'
+    +'<button class="'+btnCls('mes')+'" onclick="irHistorialMes()">Este mes</button>'
+    +'<button class="'+btnCls('todo')+'" onclick="irHistorialTodo()">Todo</button>'
+    +'<button class="'+btnCls('personalizado')+'" onclick="irHistorialPersonalizado()">📅 Personalizado</button>'
+    +(_histFiltro==='personalizado'?(
+        '<input type="date" value="'+_histDesde+'" onchange="setHistDesde(this.value)" style="width:150px;">'
+        +'<span style="font-size:12px;color:var(--texto-s)">a</span>'
+        +'<input type="date" value="'+_histHasta+'" onchange="setHistHasta(this.value)" style="width:150px;">'
+      ):'')
     +'</div>';
 
   var ventasFiltradas=ventas;
@@ -2472,15 +2497,52 @@ function setFiltroInf(tipo){
   renderInformes();
 }
 
+// ── FECHADOR PERSONALIZADO (día puntual o rango) ─────────────────────────────
+function hoyISO(){var d=new Date();var m=String(d.getMonth()+1).padStart(2,'0');var day=String(d.getDate()).padStart(2,'0');return d.getFullYear()+'-'+m+'-'+day;}
+function fechaLocalInicio(str){var p=str.split('-');return new Date(+p[0],+p[1]-1,+p[2],0,0,0,0);}
+function fechaLocalFin(str){var p=str.split('-');return new Date(+p[0],+p[1]-1,+p[2],23,59,59,999);}
+// Devuelve {desde,hasta,label} a partir de dos strings "yyyy-mm-dd", o null si no hay "desde".
+function rangoDesdeStrings(dv,hv){
+  if(!dv)return null;
+  var from=fechaLocalInicio(dv);
+  var to=fechaLocalFin(hv||dv);
+  if(hv&&to<from){from=fechaLocalInicio(hv);to=fechaLocalFin(dv);} // por si invierten desde/hasta
+  var f=function(d){return d.toLocaleDateString('es-AR',{day:'2-digit',month:'2-digit',year:'numeric'});};
+  var label=(hv&&hv!==dv)?('Del '+f(from)+' al '+f(to)):('Día '+f(from));
+  return {desde:from,hasta:to,label:label};
+}
+// Aplica el limite inferior (y superior si corresponde) a una query de Supabase.
+function aplicarRango(q,desde,hasta){
+  q=q.gte('fecha',desde.toISOString());
+  if(hasta)q=q.lte('fecha',hasta.toISOString());
+  return q;
+}
+function onInfPeriodoChange(){
+  var sel=document.getElementById('inf-periodo').value;
+  var box=document.getElementById('inf-rango');
+  if(sel==='personalizado'){
+    box.style.display='flex';
+    var di=document.getElementById('inf-desde');
+    if(!di.value){var t=hoyISO();di.value=t;document.getElementById('inf-hasta').value=t;}
+  }else{
+    box.style.display='none';
+  }
+  renderInformes();
+}
+
 async function renderInformes(){
   var periodo=document.getElementById('inf-periodo').value;
-  var desde=new Date();
-  if(periodo==='dia'){desde.setHours(0,0,0,0);}
+  var desde=new Date(),hasta=null;
+  if(periodo==='personalizado'){
+    var rp=rangoDesdeStrings(document.getElementById('inf-desde').value,document.getElementById('inf-hasta').value);
+    if(rp){desde=rp.desde;hasta=rp.hasta;}else{desde=new Date(0);}
+  }
+  else if(periodo==='dia'){desde.setHours(0,0,0,0);}
   else if(periodo==='semana'){desde.setDate(desde.getDate()-6);desde.setHours(0,0,0,0);}
   else if(periodo==='mes'){desde.setDate(1);desde.setHours(0,0,0,0);}
   else{desde=new Date(0);}
 
-  var qAll=sb.from('movimientos').select('tipo,qty').gte('fecha',desde.toISOString());
+  var qAll=aplicarRango(sb.from('movimientos').select('tipo,qty'),desde,hasta);
   var rAll=await qAll;
   var all=rAll.data||[];
   var ing=all.filter(function(m){return m.tipo==='ingreso';}).reduce(function(a,m){return a+(+m.qty||0);},0);
@@ -2493,7 +2555,7 @@ async function renderInformes(){
   document.getElementById('inf-m-baj').textContent=baj;
   document.getElementById('inf-m-stock').textContent=stockTotal;
 
-  var q2=sb.from('movimientos').select('*').gte('fecha',desde.toISOString()).order('fecha',{ascending:false});
+  var q2=aplicarRango(sb.from('movimientos').select('*'),desde,hasta).order('fecha',{ascending:false});
   if(infFiltro!=='todos') q2=q2.eq('tipo',infFiltro);
   var r2=await q2;
   var movs=r2.data||[];
@@ -2507,7 +2569,7 @@ async function renderInformes(){
       movs.map(function(m){return '<tr><td style="font-size:12px;color:var(--texto-s)">'+fmtF(m.fecha)+'</td><td><span class="badge '+colores[m.tipo]+'">'+iconos[m.tipo]+' '+labels[m.tipo]+'</span></td><td style="font-weight:600">'+m.producto+'</td><td>'+m.talle+'</td><td style="font-weight:700;text-align:center">'+(m.tipo==='ingreso'?'+':'-')+(+m.qty||0)+'</td><td style="font-size:12px;color:var(--texto-s)">'+m.motivo+'</td><td style="font-size:11px;color:var(--texto-s)">'+(m.usuario||'—')+'</td></tr>';}).join('')+'</tbody></table>';
   }
 
-  var rG=await sb.from('movimientos').select('fecha,tipo,qty').gte('fecha',desde.toISOString());
+  var rG=await aplicarRango(sb.from('movimientos').select('fecha,tipo,qty'),desde,hasta);
   var dias={};
   (rG.data||[]).forEach(function(m){
     var d=fmtD(m.fecha);
@@ -3102,13 +3164,17 @@ async function cargarSeguimiento(){
 
 async function exportarInformeExcel(){
   var periodo=document.getElementById('inf-periodo').value;
-  var labels={dia:'Hoy',semana:'Esta semana',mes:'Este mes',todo:'Todo'};
-  var desde=new Date();
-  if(periodo==='dia'){desde.setHours(0,0,0,0);}
+  var labels={dia:'Hoy',semana:'Esta semana',mes:'Este mes',todo:'Todo',personalizado:'Personalizado'};
+  var desde=new Date(),hasta=null;
+  if(periodo==='personalizado'){
+    var rp=rangoDesdeStrings(document.getElementById('inf-desde').value,document.getElementById('inf-hasta').value);
+    if(rp){desde=rp.desde;hasta=rp.hasta;}else{desde=new Date(0);}
+  }
+  else if(periodo==='dia'){desde.setHours(0,0,0,0);}
   else if(periodo==='semana'){desde.setDate(desde.getDate()-6);desde.setHours(0,0,0,0);}
   else if(periodo==='mes'){desde.setDate(1);desde.setHours(0,0,0,0);}
   else{desde=new Date(0);}
-  var r=await sb.from('movimientos').select('*').gte('fecha',desde.toISOString()).order('fecha',{ascending:false});
+  var r=await aplicarRango(sb.from('movimientos').select('*'),desde,hasta).order('fecha',{ascending:false});
   var movs=r.data||[];
   if(!movs.length){alert('Sin movimientos en este periodo');return;}
   var cols=['Fecha','Hora','Tipo','Producto','Talle','Cantidad','Motivo','Usuario'];
@@ -3123,11 +3189,15 @@ async function exportarInformeExcel(){
   descargarExcel(cols,rows,'Mini_Encanto_Movimientos_'+labels[periodo]);
 }
 async function exportarVentasExcel(){
-  var desde=new Date();
+  var desde=new Date(),hasta=null;
   if(_histFiltro==='hoy'){desde.setHours(0,0,0,0);}
   else if(_histFiltro==='mes'){desde.setDate(1);desde.setHours(0,0,0,0);}
+  else if(_histFiltro==='personalizado'){
+    var rpH=rangoDesdeStrings(_histDesde,_histHasta);
+    if(rpH){desde=rpH.desde;hasta=rpH.hasta;}else{desde=new Date(0);}
+  }
   else{desde=new Date(0);}
-  var r=await sb.from('ventas').select('*').gte('fecha',desde.toISOString()).order('num',{ascending:false});
+  var r=await aplicarRango(sb.from('ventas').select('*'),desde,hasta).order('num',{ascending:false});
   var ventas=r.data||[];
   if(!ventas.length){alert('Sin ventas en este periodo');return;}
   var cols=['N Venta','Fecha','Hora','Cliente','Telefono','Tipo precio','Medio de cobro','Total','Descuento','Vendio'];
