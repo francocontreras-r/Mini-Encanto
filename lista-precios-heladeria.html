@@ -236,9 +236,9 @@ function generarPDF(){
     margin:[9,9,9,9],
     filename:"lista-precios-"+slug(data.categoria)+"-"+slug(data.period)+".pdf",
     image:{type:"jpeg",quality:0.98},
-    html2canvas:{scale:2,useCORS:true,backgroundColor:"#ffffff",windowWidth:900,scrollX:0,scrollY:0},
+    html2canvas:{scale:2.4,useCORS:true,backgroundColor:"#ffffff",windowWidth:900,scrollX:0,scrollY:0},
     jsPDF:{unit:"mm",format:"a4",orientation:"portrait"},
-    pagebreak:{mode:["css","legacy"],avoid:[".section",".groupband"]}
+    pagebreak:{mode:["css","legacy"],avoid:[".row",".colhead",".groupband"]}
   };
   function done(){ btn.textContent=old; btn.style.pointerEvents=""; }
   if(typeof html2pdf!=="function"){ done(); alert("No se pudo cargar el generador de PDF. Probá con conexión a internet."); return; }
