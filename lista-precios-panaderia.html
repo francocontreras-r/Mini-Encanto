@@ -66,6 +66,10 @@ body.editing .monthpick{display:flex;}
 .monthpick input{width:84px;}
 
 .sections{padding:10px 16px 26px;}
+.groupband{display:flex;align-items:center;justify-content:space-between;gap:10px;
+  margin:26px 0 4px;padding:12px 16px;background:var(--tinta);color:#fff;border-radius:12px;}
+.groupband:first-child{margin-top:8px;}
+.groupband .gt{font-weight:800;letter-spacing:.18em;text-transform:uppercase;font-size:13px;}
 .section{margin-top:20px;}
 .sec-head{display:flex;align-items:baseline;justify-content:space-between;gap:10px;
   border-left:5px solid var(--naranja);background:var(--sec);
@@ -155,6 +159,10 @@ function pw(n){return n>=3?"74px":(n===2?"104px":"122px");}
 
 function render(){
   const secHTML=data.sections.map((s,si)=>{
+    if(s.band!==undefined){
+      return `<div class="groupband"><div class="gt" data-si="${si}" data-field="band">${esc(s.band)}</div>`+
+        `<button class="sec-del" onclick="delSection(${si})">✕</button></div>`;
+    }
     const cols=s.cols, W=pw(cols.length);
     const colhead=cols.map((c,ci)=>`<div class="cprice" style="width:${W}" data-si="${si}" data-field="col" data-ci="${ci}">${esc(c)}</div>`).join("");
     const rows=s.rows.map((row,ri)=>{
@@ -197,6 +205,7 @@ function applyEditable(){document.querySelectorAll("[data-field]:not(.val),[data
 document.addEventListener("input",e=>{const el=e.target;if(!el.getAttribute||!el.getAttribute("contenteditable"))return;
   const txt=el.innerText.replace(/\n/g," ").trim(),f=el.dataset.field,si=+el.dataset.si;
   if(f==="subtitle-main")data.subtitle=txt;
+  else if(f==="band")data.sections[si].band=txt;
   else if(f==="title")data.sections[si].title=txt;
   else if(f==="subtitle")data.sections[si].subtitle=txt;
   else if(f==="col")data.sections[si].cols[+el.dataset.ci]=txt;
