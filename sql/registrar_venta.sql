@@ -9,16 +9,30 @@
 --   5. Actualización de saldo de cuenta corriente (si corresponde)
 --
 -- Si CUALQUIER paso falla, se revierte TODO (no quedan ventas a medias).
--- El número de ticket se asigna sin condición de carrera (advisory lock) y el
--- stock se descuenta con SELECT ... FOR UPDATE para que dos ventas simultáneas
--- no lean el mismo stock y se pisen.
+--
+-- NUMERACIÓN DE TICKETS: usa una secuencia de Postgres (ventas_num_seq).
+-- Es atómica y a prueba de concurrencia por diseño. La secuencia se siembra
+-- ignorando números "gigantes" (timestamps que quedaron de versiones viejas):
+-- solo mira los números normales (< 1.000.000.000) para continuar desde ahí,
+-- o arranca en 1001 si no hay ninguno. Así los tickets vuelven a ser #1001,
+-- #1002, #1003… sin importar la basura que haya quedado en la tabla.
 --
 -- El total se calcula en el servidor a partir de los items: no se confía en el
 -- total que manda el cliente.
 --
--- Cómo aplicar: pegar este archivo en Supabase → SQL Editor → Run.
+-- Cómo aplicar: pegar este archivo COMPLETO en Supabase → SQL Editor → Run.
+-- (Se puede volver a correr sin problema; es idempotente.)
 -- ============================================================================
 
+-- 1) Secuencia para el número de ticket, sembrada a un valor limpio.
+create sequence if not exists public.ventas_num_seq;
+select setval(
+  'public.ventas_num_seq',
+  greatest(1000, coalesce((select max(num) from public.ventas where num < 1000000000), 1000)),
+  true  -- el próximo nextval() devolverá este valor + 1
+);
+
+-- 2) Función transaccional de venta.
 create or replace function public.registrar_venta(
   p_cliente_id      text,      -- id del cliente (null = consumidor final)
   p_cliente_nombre  text,
@@ -37,7 +51,7 @@ security definer
 set search_path = public
 as $$
 declare
-  v_num       integer;
+  v_num       bigint;
   v_fecha     timestamptz := now();
   v_subtotal  numeric := 0;
   v_total     numeric;
@@ -54,11 +68,8 @@ begin
     raise exception 'La venta no tiene items';
   end if;
 
-  -- 1) Número de ticket sin condición de carrera.
-  --    El advisory lock (por transacción) serializa la numeración entre ventas
-  --    concurrentes; se libera solo al terminar la transacción.
-  perform pg_advisory_xact_lock(hashtext('mini_encanto_venta_num'));
-  select coalesce(max(num), 1000) + 1 into v_num from ventas;
+  -- 1) Número de ticket: la secuencia lo asigna de forma atómica y sin carrera.
+  v_num := nextval('public.ventas_num_seq');
 
   -- 2) Subtotal y total calculados en el servidor
   for v_item in select value from jsonb_array_elements(p_items) as t(value) loop
@@ -87,9 +98,9 @@ begin
         raise exception 'Variante inexistente: %', v_var_id;
       end if;
 
-      -- Se mantiene la política actual: el stock nunca baja de 0 (permite vender
-      -- aunque el conteo esté en 0). Para bloquear la venta por falta de stock,
-      -- reemplazar por: if coalesce(v_stock,0) < v_qty then raise exception ...
+      -- Política actual: el stock nunca baja de 0 (permite vender aunque esté en 0).
+      -- Para bloquear la venta por falta de stock, reemplazar por:
+      --   if coalesce(v_stock,0) < v_qty then raise exception ...
       v_nuevo := greatest(0, coalesce(v_stock, 0) - v_qty);
       update variantes set stock = v_nuevo where id = v_var_id;
 
@@ -117,8 +128,6 @@ end;
 $$;
 
 -- Permisos: la app usa usuarios autenticados de Supabase Auth.
--- SECURITY DEFINER + este grant permiten que la venta escriba aunque las tablas
--- tengan RLS restrictiva, sin exponer INSERT/UPDATE directos a los clientes.
 revoke all on function public.registrar_venta(
   text, text, text, text, text, numeric, text, text, numeric, jsonb) from public;
 grant execute on function public.registrar_venta(
