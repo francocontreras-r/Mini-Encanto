@@ -644,8 +644,11 @@ input:focus,select:focus{border-color:var(--rosa);}
   </div>
   <div class="metrics" style="grid-template-columns:repeat(3,1fr);">
     <div class="metric rosa"><div class="metric-label">Total vendido</div><div class="metric-value" id="hv-total">$0</div></div>
-    <div class="metric verde"><div class="metric-label">Cantidad de ventas</div><div class="metric-value" id="hv-cant">0</div></div>
-    <div class="metric marron"><div class="metric-label">Ticket promedio</div><div class="metric-value" id="hv-prom">$0</div></div>
+    <div class="metric verde"><div class="metric-label">💰 Ganancia</div><div class="metric-value" id="hv-ganancia">$0</div><div class="metric-sub" id="hv-margen">0%</div></div>
+    <div class="metric marron"><div class="metric-label">Costo mercadería</div><div class="metric-value" id="hv-costo">$0</div></div>
+    <div class="metric gris"><div class="metric-label">Cantidad de ventas</div><div class="metric-value" id="hv-cant">0</div></div>
+    <div class="metric verde"><div class="metric-label">Ticket promedio</div><div class="metric-value" id="hv-prom">$0</div></div>
+    <div class="metric marron"><div class="metric-label">Ganancia promedio</div><div class="metric-value" id="hv-gan-prom">$0</div></div>
   </div>
   <div class="card">
     <div class="card-title">Ventas por medio de cobro</div>
@@ -2202,6 +2205,29 @@ function filtrarHistorialMes(){
   renderHistorial();
 }
 
+// Costo de mercadería (COGS) por venta: suma qty*costo de cada item, tomando
+// el costo desde _prods. Devuelve {porVenta:{num:costo}, total, sinCosto}.
+// sinCosto cuenta items cuyo producto no tiene costo cargado (ganancia inflada).
+async function _cogsPorNums(nums){
+  var res={porVenta:{},total:0,sinCosto:0};
+  if(!nums.length) return res;
+  await _asegurarProds();
+  var costoDe={};
+  _prods.forEach(function(p){costoDe[p.id]=+p.costo||0;});
+  for(var i=0;i<nums.length;i+=300){
+    var chunk=nums.slice(i,i+300);
+    var r=await sb.from('items_ventas').select('venta_num,producto_id,qty').in('venta_num',chunk);
+    (r.data||[]).forEach(function(it){
+      var costoUnit=costoDe[it.producto_id];
+      if(!costoUnit) res.sinCosto+=(+it.qty||0);
+      var c=(costoUnit||0)*(+it.qty||0);
+      res.porVenta[it.venta_num]=(res.porVenta[it.venta_num]||0)+c;
+      res.total+=c;
+    });
+  }
+  return res;
+}
+
 async function renderHistorial(){
   var query=sb.from('ventas').select('*').order('num',{ascending:false});
   var hoy=new Date(); hoy.setHours(0,0,0,0);
@@ -2219,6 +2245,17 @@ async function renderHistorial(){
   document.getElementById('hv-total').textContent=fmt(total);
   document.getElementById('hv-cant').textContent=ventas.length;
   document.getElementById('hv-prom').textContent=ventas.length?fmt(total/ventas.length):'$0';
+
+  // Ganancia = total vendido (ya con descuento) - costo de la mercadería vendida
+  var cogs=await _cogsPorNums(ventas.map(function(v){return v.num;}));
+  var ganancia=total-cogs.total;
+  var margen=total>0?(ganancia/total*100):0;
+  document.getElementById('hv-ganancia').textContent=fmt(ganancia);
+  document.getElementById('hv-costo').textContent=fmt(cogs.total);
+  document.getElementById('hv-gan-prom').textContent=ventas.length?fmt(ganancia/ventas.length):'$0';
+  var elMargen=document.getElementById('hv-margen');
+  elMargen.textContent=(total>0?margen.toFixed(1):'0')+'% margen'
+    +(cogs.sinCosto>0?' · '+cogs.sinCosto+' sin costo':'');
 
   var medios={Efectivo:{total:0,cant:0},Transferencia:{total:0,cant:0},'Debito':{total:0,cant:0},'Credito':{total:0,cant:0},'Cuenta cte.':{total:0,cant:0}};
   var mediosLabels={Efectivo:'Efectivo',Transferencia:'Transferencia',Debito:'Debito',Credito:'Credito','Cuenta cte.':'Cuenta cte.'};
@@ -3195,12 +3232,15 @@ async function exportarVentasExcel(){
   var r=await aplicarRango(sb.from('ventas').select('*'),desde,hasta).order('num',{ascending:false});
   var ventas=r.data||[];
   if(!ventas.length){alert('Sin ventas en este periodo');return;}
-  var cols=['N Venta','Fecha','Hora','Cliente','Telefono','Tipo precio','Medio de cobro','Total','Descuento','Vendio'];
+  var cogs=await _cogsPorNums(ventas.map(function(v){return v.num;}));
+  var cols=['N Venta','Fecha','Hora','Cliente','Telefono','Tipo precio','Medio de cobro','Total','Descuento','Costo','Ganancia','Vendio'];
   var rows=ventas.map(function(v){
     var d=new Date(v.fecha);
     var fecha=d.toLocaleDateString('es-AR',{day:'2-digit',month:'2-digit',year:'numeric'});
     var hora=d.toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'});
-    return ['#'+v.num,fecha,hora,v.cliente||'Consumidor final',v.cliente_tel||'',v.tipo_precio||'',v.pago||'',(+v.total||0),(+v.descuento||0),v.usuario||''];
+    var costoV=cogs.porVenta[v.num]||0;
+    var ganV=(+v.total||0)-costoV;
+    return ['#'+v.num,fecha,hora,v.cliente||'Consumidor final',v.cliente_tel||'',v.tipo_precio||'',v.pago||'',(+v.total||0),(+v.descuento||0),costoV,ganV,v.usuario||''];
   });
   descargarExcel(cols,rows,'Mini_Encanto_Ventas');
 }
