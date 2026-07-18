@@ -120,6 +120,11 @@ input:focus,select:focus{border-color:var(--rosa);}
 .toast{position:fixed;bottom:2rem;right:2rem;background:var(--texto);color:#fff;padding:12px 20px;border-radius:12px;font-size:13px;font-weight:600;z-index:9999;opacity:0;transition:opacity .3s;pointer-events:none;}
 .toast.show{opacity:1;}
 /* ── MOBILE PWA - Professional Layout ─────────────────────────────── */
+/* Banner de "nueva versión disponible" */
+.upd-banner{position:fixed;left:12px;right:12px;bottom:calc(74px + env(safe-area-inset-bottom,0px));z-index:1500;background:#527856;color:#fff;border-radius:12px;padding:12px 14px;display:flex;align-items:center;justify-content:space-between;gap:10px;box-shadow:0 6px 24px rgba(61,53,48,.28);font-size:13px;font-weight:600;}
+.upd-banner button{background:#fff;color:#527856;border:none;border-radius:8px;padding:8px 16px;font-weight:700;font-family:inherit;font-size:13px;cursor:pointer;flex:none;}
+@media print{.upd-banner{display:none !important;}}
+
 /* Informe PDF: overlay de vista previa + estilos de impresión */
 #pdf-report{display:none;position:fixed;inset:0;background:#E9E5DF;z-index:2000;overflow:auto;}
 #pdf-report .pdf-scroll{padding:22px;}
@@ -915,6 +920,54 @@ if('serviceWorker' in navigator){
     });
   });
 }
+
+// ── Auto-actualización: detecta cuando hay una versión nueva publicada ───────
+var APP_VERSION = '2026-07-18-02'; // ⚠️ SUBIR este valor en cada publicación
+
+function _appOcupada(){
+  var mod=document.getElementById('modales'); if(mod && mod.innerHTML.trim()) return true;
+  var pdf=document.getElementById('pdf-report'); if(pdf && pdf.style.display==='block') return true;
+  var sheet=document.getElementById('mas-sheet'); if(sheet && sheet.classList.contains('open')) return true;
+  if(window.ventaActual && ventaActual.items && ventaActual.items.length) return true;
+  return false;
+}
+function mostrarBannerActualizar(){
+  if(document.getElementById('upd-banner')) return;
+  var b=document.createElement('div');
+  b.id='upd-banner'; b.className='upd-banner';
+  b.innerHTML='<span>🔄 Hay una versión nueva de Mini Encanto</span><button onclick="actualizarApp()">Actualizar</button>';
+  document.body.appendChild(b);
+}
+async function actualizarApp(){
+  try{ if('caches' in window){var ks=await caches.keys(); await Promise.all(ks.map(function(k){return caches.delete(k);}));} }catch(e){}
+  try{ if('serviceWorker' in navigator){var rs=await navigator.serviceWorker.getRegistrations(); await Promise.all(rs.map(function(r){return r.update();}));} }catch(e){}
+  location.reload();
+}
+async function chequearVersion(origen){
+  try{
+    var r=await fetch('/index.html?_v='+Date.now(), {cache:'no-store'});
+    if(!r.ok) return;
+    var txt=await r.text();
+    var m=txt.match(/APP_VERSION = '([^']+)'/);
+    if(!m) return;
+    if(m[1]===APP_VERSION){ try{sessionStorage.removeItem('me_autoupd');}catch(e){} return; }
+    // hay versión nueva
+    if(origen==='visibilidad' && !_appOcupada() && !(function(){try{return sessionStorage.getItem('me_autoupd');}catch(e){return false;}})()){
+      try{sessionStorage.setItem('me_autoupd','1');}catch(e){}
+      if(typeof toast==='function') toast('Actualizando a la nueva versión…');
+      setTimeout(actualizarApp, 900);
+    } else {
+      mostrarBannerActualizar();
+    }
+  }catch(e){}
+}
+document.addEventListener('visibilitychange', function(){
+  if(document.visibilityState==='visible') chequearVersion('visibilidad');
+});
+window.addEventListener('load', function(){
+  setTimeout(function(){ chequearVersion('carga'); }, 4000);
+  setInterval(function(){ chequearVersion('intervalo'); }, 10*60*1000);
+});
 
 // PWA Install prompt
 var deferredPrompt;
