@@ -120,6 +120,20 @@ input:focus,select:focus{border-color:var(--rosa);}
 .toast{position:fixed;bottom:2rem;right:2rem;background:var(--texto);color:#fff;padding:12px 20px;border-radius:12px;font-size:13px;font-weight:600;z-index:9999;opacity:0;transition:opacity .3s;pointer-events:none;}
 .toast.show{opacity:1;}
 /* ── MOBILE PWA - Professional Layout ─────────────────────────────── */
+/* Informe PDF: overlay de vista previa + estilos de impresión */
+#pdf-report{display:none;position:fixed;inset:0;background:#E9E5DF;z-index:2000;overflow:auto;}
+#pdf-report .pdf-scroll{padding:22px;}
+#pdf-report .pdf-doc{max-width:860px;margin:0 auto;background:#fff;border-radius:6px;box-shadow:0 8px 40px rgba(61,53,48,.18);overflow:hidden;}
+@media print{
+  body{overflow:visible !important;}
+  body > *:not(#pdf-report){display:none !important;}
+  #pdf-report{display:block !important;position:static !important;background:#fff !important;overflow:visible !important;}
+  #pdf-report .no-print{display:none !important;}
+  #pdf-report .pdf-scroll{padding:0 !important;}
+  #pdf-report .pdf-doc{max-width:none !important;box-shadow:none !important;border-radius:0 !important;}
+  @page{margin:10mm;}
+}
+
 /* Nav móvil: por defecto (escritorio) ocultar botón "Más", labels móviles y sheet */
 .nav-mas-btn{display:none;}
 .nav-txt-mob{display:none;}
@@ -667,7 +681,10 @@ input:focus,select:focus{border-color:var(--rosa);}
 <div class="page" id="page-historial">
   <div class="page-header">
     <div class="page-title">Informe de ventas</div>
-    <button class="btn btn-outline" onclick="exportarVentasExcel()">📥 Descargar Excel</button>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn btn-rosa" onclick="abrirInformePDF()">📄 Descargar PDF</button>
+      <button class="btn btn-outline" onclick="exportarVentasExcel()">📥 Descargar Excel</button>
+    </div>
   </div>
   <div class="metrics" style="grid-template-columns:repeat(3,1fr);">
     <div class="metric rosa"><div class="metric-label">Total vendido</div><div class="metric-value" id="hv-total">$0</div></div>
@@ -710,6 +727,7 @@ input:focus,select:focus{border-color:var(--rosa);}
 </div></div>
 </div>
 <div id="modales"></div>
+<div id="pdf-report"></div>
 <div id="mas-sheet" class="mas-sheet" onclick="if(event.target===this)cerrarMas()">
   <div class="mas-sheet-panel">
     <div class="mas-sheet-title">Más opciones</div>
@@ -3291,6 +3309,188 @@ async function exportarVentasExcel(){
   });
   descargarExcel(cols,rows,'Mini_Encanto_Ventas');
 }
+
+// ══════════════════════════════════════════════════════════════════════════
+// INFORME DE VENTAS EN PDF
+// ══════════════════════════════════════════════════════════════════════════
+var MEDIO_COL={'Efectivo':'#3F9E63','Transferencia':'#3B7DD8','Debito':'#E08A2B','Débito':'#E08A2B','Credito':'#9264CC','Crédito':'#9264CC','Cuenta cte.':'#D9556F'};
+
+function _pdfMoney(n){return '$'+Math.round(+n||0).toLocaleString('es-AR');}
+function _pdfMoneyK(n){n=+n||0; return n>=1000?('$'+Math.round(n/1000).toLocaleString('es-AR')+'k'):('$'+Math.round(n).toLocaleString('es-AR'));}
+function _pdfFechaCorta(d){return d.toLocaleDateString('es-AR',{day:'2-digit',month:'2-digit',year:'numeric'});}
+
+function abrirInformePDF(){
+  var hoy=new Date();
+  var iniMes=new Date(hoy.getFullYear(),hoy.getMonth(),1);
+  var f=function(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');};
+  abrirModal('<div class="modal"><div class="modal-title">📄 Informe de ventas en PDF</div>'
+    +'<div style="font-size:13px;color:var(--texto-s)">Elegí el período del informe:</div>'
+    +'<div style="display:flex;gap:8px;flex-wrap:wrap">'
+      +'<button class="btn btn-sm btn-outline" onclick="setPdfRango(\'hoy\')">Hoy</button>'
+      +'<button class="btn btn-sm btn-outline" onclick="setPdfRango(\'mes\')">Este mes</button>'
+      +'<button class="btn btn-sm btn-outline" onclick="setPdfRango(\'anio\')">Este año</button>'
+    +'</div>'
+    +'<div class="form-row"><div class="form-group"><label class="form-label">Desde</label><input type="date" id="pdf-desde" value="'+f(iniMes)+'"></div>'
+    +'<div class="form-group"><label class="form-label">Hasta</label><input type="date" id="pdf-hasta" value="'+f(hoy)+'"></div></div>'
+    +'<div class="modal-footer"><button class="btn btn-outline" onclick="cerrarModal()">Cancelar</button>'
+    +'<button class="btn btn-rosa" onclick="generarInformePDF()">📄 Generar PDF</button></div></div>');
+}
+function setPdfRango(t){
+  var hoy=new Date(); var desde;
+  if(t==='hoy'){desde=new Date(hoy);}
+  else if(t==='mes'){desde=new Date(hoy.getFullYear(),hoy.getMonth(),1);}
+  else{desde=new Date(hoy.getFullYear(),0,1);}
+  var f=function(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');};
+  document.getElementById('pdf-desde').value=f(desde);
+  document.getElementById('pdf-hasta').value=f(hoy);
+}
+
+async function generarInformePDF(){
+  var dv=document.getElementById('pdf-desde').value, hv=document.getElementById('pdf-hasta').value;
+  if(!dv||!hv){alert('Elegí las fechas Desde y Hasta');return;}
+  var desde=fechaLocalInicio(dv), hasta=fechaLocalFin(hv);
+  if(hasta<desde){var tmp=desde;desde=fechaLocalInicio(hv);hasta=fechaLocalFin(dv);}
+  cerrarModal();
+  toast('Generando informe…');
+  var D=await _datosInforme(desde,hasta);
+  if(!D.cant){alert('No hay ventas en el período elegido');return;}
+  var periodo=_pdfFechaCorta(desde)+' – '+_pdfFechaCorta(hasta);
+  var cont=document.getElementById('pdf-report');
+  cont.innerHTML=_htmlInforme(D,periodo);
+  cont.style.display='block';
+  document.body.style.overflow='hidden';
+}
+function cerrarInformePDF(){
+  var cont=document.getElementById('pdf-report');
+  cont.style.display='none'; cont.innerHTML='';
+  document.body.style.overflow='';
+}
+
+async function _datosInforme(desde,hasta){
+  var r=await aplicarRango(sb.from('ventas').select('*'),desde,hasta).order('num',{ascending:false});
+  var ventas=r.data||[];
+  var nums=ventas.map(function(v){return v.num;});
+  await _asegurarProds();
+  var costoDe={}; _prods.forEach(function(p){costoDe[p.id]=+p.costo||0;});
+  var items=[];
+  for(var i=0;i<nums.length;i+=300){
+    var ri=await sb.from('items_ventas').select('venta_num,producto_id,nombre,precio,qty').in('venta_num',nums.slice(i,i+300));
+    items=items.concat(ri.data||[]);
+  }
+  var total=0,descuentos=0,cogs=0;
+  ventas.forEach(function(v){total+=(+v.total||0);descuentos+=(+v.descuento||0);});
+  items.forEach(function(it){cogs+=(costoDe[it.producto_id]||0)*(+it.qty||0);});
+  var medios={};
+  ventas.forEach(function(v){var k=v.pago||'—';medios[k]=(medios[k]||0)+(+v.total||0);});
+  var tipos={minorista:{monto:0,cant:0},mayorista:{monto:0,cant:0}};
+  ventas.forEach(function(v){var t=(v.tipo_precio==='mayorista')?'mayorista':'minorista';tipos[t].monto+=(+v.total||0);tipos[t].cant++;});
+  var dow=[0,0,0,0,0,0,0]; // Lun..Dom
+  ventas.forEach(function(v){var d=new Date(v.fecha).getDay();dow[(d===0)?6:d-1]+=(+v.total||0);});
+  var byDay={};
+  ventas.forEach(function(v){var d=new Date(v.fecha);var k=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');byDay[k]=(byDay[k]||0)+(+v.total||0);});
+  var pa={};
+  items.forEach(function(it){var k=it.nombre||it.producto_id||'—';if(!pa[k])pa[k]={nombre:k,uds:0,imp:0};pa[k].uds+=(+it.qty||0);pa[k].imp+=(+it.precio||0)*(+it.qty||0);});
+  var prods=Object.keys(pa).map(function(k){return pa[k];}).sort(function(a,b){return b.imp-a.imp;}).slice(0,8);
+  var ganancia=total-cogs;
+  return {cant:ventas.length,total:total,ticket:ventas.length?total/ventas.length:0,cogs:cogs,ganancia:ganancia,
+    margen:total>0?ganancia/total*100:0,descuentos:descuentos,medios:medios,tipos:tipos,dow:dow,byDay:byDay,prods:prods};
+}
+
+// ── Gráfico: barras verticales (evolución) ──
+function _svgBarras(pairs){
+  var W=760,H=170,pb=24,pt=8,n=pairs.length,gap=n>40?2:6;
+  if(!n) return '<div style="text-align:center;color:#9A938C;padding:20px">Sin datos</div>';
+  var bw=(W-(n-1)*gap)/n, mx=Math.max.apply(null,pairs.map(function(p){return p[1];}))||1, s='';
+  var every=Math.ceil(n/8);
+  pairs.forEach(function(p,i){
+    var bh=(p[1]/mx)*(H-pb-pt),x=i*(bw+gap),y=H-pb-bh;
+    s+='<rect x="'+x.toFixed(1)+'" y="'+y.toFixed(1)+'" width="'+bw.toFixed(1)+'" height="'+Math.max(bh,2).toFixed(1)+'" rx="3" fill="#E8A598"/>';
+    if(i%every===0) s+='<text x="'+(x+bw/2).toFixed(1)+'" y="'+(H-8)+'" font-size="9" fill="#9A938C" text-anchor="middle">'+p[0]+'</text>';
+  });
+  return '<svg viewBox="0 0 '+W+' '+H+'" width="100%" style="display:block"><line x1="0" y1="'+(pt+(H-pb-pt)/2)+'" x2="'+W+'" y2="'+(pt+(H-pb-pt)/2)+'" stroke="#F0ECE6"/>'+s+'<line x1="0" y1="'+(H-pb)+'" x2="'+W+'" y2="'+(H-pb)+'" stroke="#E5DFD8" stroke-width="1.5"/></svg>';
+}
+// ── Gráfico: días de la semana con montos ──
+function _svgDias(dow){
+  var dias=['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'];
+  var W=340,H=168,pb=22,pt=24,gap=10,bw=(W-6*gap)/7,mx=Math.max.apply(null,dow)||1,s='';
+  var best=dow.indexOf(mx);
+  dow.forEach(function(v,i){
+    var bh=(v/mx)*(H-pb-pt),x=i*(bw+gap),y=H-pb-bh,isB=i===best;
+    s+='<rect x="'+x.toFixed(1)+'" y="'+y.toFixed(1)+'" width="'+bw.toFixed(1)+'" height="'+Math.max(bh,2).toFixed(1)+'" rx="3" fill="'+(isB?'#7A9E7E':'#E8A598')+'"/>';
+    s+='<text x="'+(x+bw/2).toFixed(1)+'" y="'+(y-6).toFixed(1)+'" font-size="10" fill="'+(isB?'#527856':'#7A7470')+'" font-weight="700" text-anchor="middle">'+_pdfMoneyK(v)+'</text>';
+    s+='<text x="'+(x+bw/2).toFixed(1)+'" y="'+(H-7)+'" font-size="10" fill="'+(isB?'#527856':'#9A938C')+'" font-weight="'+(isB?700:400)+'" text-anchor="middle">'+dias[i]+'</text>';
+  });
+  return {svg:'<svg viewBox="0 0 '+W+' '+H+'" width="100%" style="display:block">'+s+'<line x1="0" y1="'+(H-pb)+'" x2="'+W+'" y2="'+(H-pb)+'" stroke="#E5DFD8" stroke-width="1.5"/></svg>', best:best, bestVal:mx, bestDia:dias[best]};
+}
+
+function _htmlInforme(D,periodo){
+  // evolución: por día, o por mes si son muchos días
+  var keys=Object.keys(D.byDay).sort();
+  var pairs;
+  if(keys.length>45){
+    var byM={}; keys.forEach(function(k){var m=k.slice(0,7);byM[m]=(byM[m]||0)+D.byDay[k];});
+    pairs=Object.keys(byM).sort().map(function(m){var pp=m.split('-');return [pp[1]+'/'+pp[0].slice(2),byM[m]];});
+  }else{
+    pairs=keys.map(function(k){var pp=k.split('-');return [pp[2]+'/'+pp[1],D.byDay[k]];});
+  }
+  var dias=_svgDias(D.dow);
+  // medios de cobro
+  var mk=Object.keys(D.medios).sort(function(a,b){return D.medios[b]-D.medios[a];});
+  var mmax=mk.length?D.medios[mk[0]]:1;
+  var mrows=mk.map(function(k){
+    var v=D.medios[k],pct=D.total>0?v/D.total*100:0,col=MEDIO_COL[k]||'#8A8880';
+    return '<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">'
+      +'<div style="width:120px;font-size:12px;color:#3D3530;font-weight:600;display:flex;align-items:center;gap:6px"><span style="width:10px;height:10px;border-radius:3px;background:'+col+';flex:none"></span>'+k+'</div>'
+      +'<div style="flex:1;background:#F5F2EE;border-radius:6px;height:15px"><div style="width:'+(v/mmax*100).toFixed(1)+'%;background:'+col+';height:15px;border-radius:6px"></div></div>'
+      +'<div style="width:120px;text-align:right;font-size:12px;color:#3D3530"><b>'+_pdfMoney(v)+'</b> <span style="color:#9A938C">'+pct.toFixed(0)+'%</span></div></div>';
+  }).join('');
+  // tipos
+  var tt=D.tipos.minorista.monto+D.tipos.mayorista.monto||1;
+  var tcard=function(name,o,col){
+    return '<div style="flex:1;background:#fff;border:1px solid #EDE8E2;border-radius:12px;padding:13px 15px">'
+      +'<div style="display:flex;align-items:center;gap:7px;font-size:12.5px;font-weight:700;color:#3D3530"><span style="width:11px;height:11px;border-radius:3px;background:'+col+'"></span>'+name+'</div>'
+      +'<div style="font-size:20px;font-weight:800;color:#3D3530;margin:4px 0 1px">'+_pdfMoney(o.monto)+' <span style="font-size:13px;color:#9A938C;font-weight:600">'+(o.monto/tt*100).toFixed(0)+'%</span></div>'
+      +'<div style="font-size:11px;color:#7A7470">'+o.cant+' ventas · ticket '+_pdfMoney(o.cant?o.monto/o.cant:0)+'</div></div>';
+  };
+  var split='<div style="width:'+(D.tipos.minorista.monto/tt*100).toFixed(1)+'%;background:#E8A598"></div><div style="width:'+(D.tipos.mayorista.monto/tt*100).toFixed(1)+'%;background:#7A9E7E"></div>';
+  // productos
+  var pmax=D.prods.length?D.prods[0].imp:1;
+  var prows=D.prods.map(function(p,i){
+    return '<tr><td style="padding:8px;font-weight:600;color:#3D3530">'+(i+1)+'. '+p.nombre+'</td>'
+      +'<td style="padding:8px;text-align:center;color:#7A7470">'+p.uds+'</td>'
+      +'<td style="padding:8px;width:150px"><div style="display:flex;align-items:center;gap:8px"><div style="flex:1;background:#F5F2EE;border-radius:5px;height:11px"><div style="width:'+(p.imp/pmax*100).toFixed(0)+'%;background:#7A9E7E;height:11px;border-radius:5px"></div></div><span style="font-weight:700;color:#3D3530;font-size:12px;white-space:nowrap">'+_pdfMoney(p.imp)+'</span></div></td>'
+      +'<td style="padding:8px;text-align:right;color:#9A938C">'+(D.total>0?(p.imp/D.total*100).toFixed(0):0)+'%</td></tr>';
+  }).join('');
+  var kpi=function(l,val,sub){return '<div style="flex:1;background:#fff;border:1px solid #EDE8E2;border-radius:14px;padding:13px 15px"><div style="font-size:10.5px;color:#7A7470;font-weight:600;text-transform:uppercase;letter-spacing:.5px">'+l+'</div><div style="font-size:22px;font-weight:800;color:#3D3530;margin-top:2px">'+val+'</div><div style="font-size:10.5px;color:#9A938C;margin-top:2px">'+sub+'</div></div>';};
+  var sect=function(t){return '<div style="font-size:12.5px;font-weight:800;color:#3D3530;text-transform:uppercase;letter-spacing:1px;margin-bottom:11px;display:flex;align-items:center;gap:8px"><span style="width:4px;height:14px;background:#E8A598;border-radius:2px"></span>'+t+'</div>';};
+  var hoyGen=_pdfFechaCorta(new Date());
+  var mejorMedio=mk.length?mk[0]:'—';
+
+  var bar=  '<div class="no-print" style="position:sticky;top:0;display:flex;justify-content:space-between;align-items:center;gap:10px;background:#fff;border-bottom:1px solid #EDE8E2;padding:10px 16px;z-index:5">'
+    +'<div style="font-weight:700;color:#3D3530">Vista previa del informe</div>'
+    +'<div style="display:flex;gap:8px"><button class="btn btn-outline btn-sm" onclick="cerrarInformePDF()">Cerrar</button>'
+    +'<button class="btn btn-rosa btn-sm" onclick="window.print()">🖨️ Imprimir / Guardar PDF</button></div></div>';
+
+  var doc='<div class="pdf-doc">'
+    +'<div style="display:flex;align-items:center;justify-content:space-between;padding:14px 30px;background:linear-gradient(120deg,#FAF0EE,#FAF6F1);border-bottom:3px solid #E8A598">'
+      +'<div style="display:flex;align-items:center;gap:14px"><img src="/icon-192.png" style="width:60px;height:60px;border-radius:12px;border:1px solid #EDE8E2">'
+      +'<div><div style="font-family:\'Playfair Display\',Georgia,serif;font-size:25px;color:#3D3530;font-weight:700">Informe de ventas</div><div style="font-size:12.5px;color:#7A7470;margin-top:2px">Mini Encanto · Ropa de bebé y niños</div></div></div>'
+      +'<div style="text-align:right;font-size:11.5px;color:#7A7470"><div style="font-size:10.5px;text-transform:uppercase;letter-spacing:.5px;color:#9A938C">Período</div><div style="font-size:14.5px;font-weight:700;color:#3D3530">'+periodo+'</div><div style="margin-top:3px">Generado el '+hoyGen+'</div></div></div>'
+    +'<div style="padding:14px 28px 16px">'
+      +'<div style="background:#F7FAF7;border:1px solid #E4EFE5;border-left:4px solid #7A9E7E;border-radius:10px;padding:11px 15px;margin-bottom:20px;font-size:12.5px;line-height:1.5"><b>Resumen:</b> '+D.cant+' ventas por <b>'+_pdfMoney(D.total)+'</b>, ganancia <b>'+_pdfMoney(D.ganancia)+'</b> ('+D.margen.toFixed(0)+'% margen). El día que más se vende es el <b>'+dias.bestDia+'</b> y el medio más usado es <b>'+mejorMedio+'</b>.</div>'
+      +'<div style="display:flex;gap:11px;margin-bottom:14px">'+kpi('Total vendido',_pdfMoney(D.total),D.cant+' ventas')+kpi('Ganancia',_pdfMoney(D.ganancia),D.margen.toFixed(0)+'% margen')+kpi('Ticket promedio',_pdfMoney(D.ticket),'por venta')+kpi('Costo mercadería',_pdfMoney(D.cogs),'CMV')+'</div>'
+      +'<div style="margin-bottom:14px">'+sect('Evolución de ventas')+'<div style="background:#fff;border:1px solid #EDE8E2;border-radius:12px;padding:15px 18px 4px">'+_svgBarras(pairs)+'</div></div>'
+      +'<div style="display:flex;gap:18px;margin-bottom:14px">'
+        +'<div style="flex:1.05">'+sect('¿Qué días se vende más?')+'<div style="background:#fff;border:1px solid #EDE8E2;border-radius:12px;padding:14px 16px 4px">'+dias.svg+'<div style="font-size:11px;color:#527856;font-weight:700;text-align:center;padding:2px 0 4px">Mejor día: '+dias.bestDia+' ('+_pdfMoney(dias.bestVal)+')</div></div></div>'
+        +'<div style="flex:1">'+sect('Mayorista vs. Minorista')+'<div style="display:flex;gap:10px;margin-bottom:9px">'+tcard('Minorista',D.tipos.minorista,'#E8A598')+tcard('Mayorista',D.tipos.mayorista,'#7A9E7E')+'</div><div style="display:flex;height:14px;border-radius:7px;overflow:hidden;border:1px solid #EDE8E2">'+split+'</div></div></div>'
+      +'<div style="margin-bottom:14px">'+sect('Medios de cobro más usados')+'<div style="background:#fff;border:1px solid #EDE8E2;border-radius:12px;padding:16px 18px 7px">'+(mrows||'<div style="color:#9A938C">Sin datos</div>')+'</div></div>'
+      +'<div style="margin-bottom:20px">'+sect('Productos más vendidos')+'<div style="background:#fff;border:1px solid #EDE8E2;border-radius:12px;padding:7px 12px 3px"><table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr><th style="text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:#9A938C;padding:0 8px 7px;border-bottom:2px solid #EDE8E2">Producto</th><th style="text-align:center;font-size:10px;text-transform:uppercase;color:#9A938C;padding:0 8px 7px;border-bottom:2px solid #EDE8E2">Uds.</th><th style="text-align:left;font-size:10px;text-transform:uppercase;color:#9A938C;padding:0 8px 7px;border-bottom:2px solid #EDE8E2">Importe</th><th style="text-align:right;font-size:10px;text-transform:uppercase;color:#9A938C;padding:0 8px 7px;border-bottom:2px solid #EDE8E2">% total</th></tr></thead><tbody>'+prows+'</tbody></table></div></div>'
+      +(D.descuentos>0?'<div style="font-size:11.5px;color:#7A7470;margin-bottom:14px">Descuentos otorgados en el período: <b>'+_pdfMoney(D.descuentos)+'</b></div>':'')
+      +'<div style="display:flex;justify-content:space-between;border-top:1px solid #EDE8E2;padding-top:12px;font-size:10.5px;color:#9A938C"><div>Mini Encanto — Sistema de gestión</div><div>Generado el '+hoyGen+'</div></div>'
+    +'</div></div>';
+  return bar+'<div class="pdf-scroll">'+doc+'</div>';
+}
+
 
 function descargarExcel(headers,rows,filename){
   // Build proper Excel-compatible content
