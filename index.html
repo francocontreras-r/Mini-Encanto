@@ -2115,60 +2115,55 @@ function mostrarPantallaCobro(tipo){
   }
 }
 
-async function getNextTicketNum(){
-  // Always get the current max and add 1 - simple and conflict-free
-  var r=await sb.from('ventas').select('num').order('num',{ascending:false}).limit(1);
-  if(r.data&&r.data.length>0){
-    var last=+r.data[0].num||0;
-    return last+1;
-  }
-  return 1001;
-}
-
 async function procesarVenta(){
   var subtotal=ventaActual.items.reduce(function(a,i){return a+i.precio*i.qty;},0);
   var descuento=ventaActual.descuento||0;
   var total=subtotal-descuento;
-  var num=await getNextTicketNum();
   var pagoCombinado=ventaActual.pago2&&ventaActual.pago2monto>0?ventaActual.pago+' + '+ventaActual.pago2:ventaActual.pago;
-  var vData={num:num,fecha:new Date().toISOString(),cliente:ventaActual.cliente?ventaActual.cliente.nombre:null,cliente_tel:ventaActual.cliente?ventaActual.cliente.tel:null,pago:pagoCombinado,tipo_precio:ventaActual.tipoPrecio,total:total,descuento:descuento,descuento_tipo:ventaActual.descuentoTipo||null,usuario:_usuarioActual};
-  var r=await sb.from('ventas').insert(vData);
-  if(r.error){toast('Error al guardar venta');return;}
-  for(var ii=0;ii<ventaActual.items.length;ii++){
-    var item=ventaActual.items[ii];
-    var v=_variantes.find(function(x){return x.id===item.varianteId;});
-    if(v){
-      var ns=Math.max(0,(+v.stock||0)-item.qty);
-      await sb.from('variantes').update({stock:ns}).eq('id',v.id);
-      await sb.from('movimientos').insert({tipo:'venta',producto:item.nombre,talle:item.talle,qty:item.qty,motivo:'Venta #'+num,usuario:_usuarioActual});
-      v.stock=ns;
+
+  // Cuánto de esta venta va a cuenta corriente (0 = nada)
+  var montoCta=0;
+  if(pagoCombinado.indexOf('Cuenta cte.')>=0 && ventaActual.cliente && ventaActual.cliente.id){
+    montoCta=total;
+    if(ventaActual.pago2==='Cuenta cte.' && ventaActual.pago2monto>0){
+      montoCta=ventaActual.pago2monto;
+    } else if(ventaActual.pago==='Cuenta cte.' && ventaActual.pago2 && ventaActual.pago2monto>0){
+      montoCta=total-(ventaActual.pago2monto||0);
     }
-    await sb.from('items_ventas').insert({venta_num:num,producto_id:item.id,nombre:item.nombre,talle:item.talle,precio:item.precio,qty:item.qty});
   }
-  // Update cuenta corriente saldo
-  var pagoFinal=pagoCombinado||ventaActual.pago||'';
-  var pagoEsCta = pagoFinal.indexOf('Cuenta cte.')>=0;
-  if(pagoEsCta && ventaActual.cliente && ventaActual.cliente.id){
-    try {
-      // Calculate how much goes to cuenta cte
-      var montoCta = total;
-      if(ventaActual.pago2==='Cuenta cte.' && ventaActual.pago2monto>0){
-        montoCta = ventaActual.pago2monto;
-      } else if(ventaActual.pago==='Cuenta cte.' && ventaActual.pago2 && ventaActual.pago2monto>0){
-        montoCta = total - (ventaActual.pago2monto||0);
-      }
-      // Fetch current saldo
-      var rSaldo=await sb.from('clientes').select('saldo,nombre').eq('id',ventaActual.cliente.id).single();
-      if(rSaldo.data){
-        var saldoActual=+rSaldo.data.saldo||0;
-        var nuevoSaldo=saldoActual+montoCta;
-        await sb.from('clientes').update({saldo:nuevoSaldo}).eq('id',ventaActual.cliente.id);
-        console.log('CTA CTE actualizada:', rSaldo.data.nombre, 'Saldo anterior:', saldoActual, 'Nuevo:', nuevoSaldo);
-      }
-    } catch(e){ console.error('Error actualizando CTA CTE:', e); }
+
+  // Toda la venta se registra en UNA transacción atómica en el servidor (RPC).
+  // Si algo falla, no queda nada a medias y el vendedor ve el error.
+  var itemsPayload=ventaActual.items.map(function(i){
+    return {variante_id:i.varianteId||'',producto_id:i.id,nombre:i.nombre,talle:i.talle,precio:i.precio,qty:i.qty};
+  });
+  var r=await sb.rpc('registrar_venta',{
+    p_cliente_id:(ventaActual.cliente&&ventaActual.cliente.id)||null,
+    p_cliente_nombre:ventaActual.cliente?ventaActual.cliente.nombre:null,
+    p_cliente_tel:ventaActual.cliente?ventaActual.cliente.tel:null,
+    p_pago:pagoCombinado,
+    p_tipo_precio:ventaActual.tipoPrecio,
+    p_descuento:descuento,
+    p_descuento_tipo:ventaActual.descuentoTipo||null,
+    p_usuario:_usuarioActual,
+    p_monto_cta:montoCta,
+    p_items:itemsPayload
+  });
+  if(r.error){toast('Error al registrar la venta: '+(r.error.message||''));return;}
+  var num=(r.data&&r.data.num)||null;
+  var fechaVenta=(r.data&&r.data.fecha)||new Date().toISOString();
+
+  // Reflejar el nuevo stock y saldo en memoria (la base ya es la fuente real)
+  ventaActual.items.forEach(function(item){
+    var v=_variantes.find(function(x){return x.id===item.varianteId;});
+    if(v)v.stock=Math.max(0,(+v.stock||0)-item.qty);
+  });
+  if(montoCta>0 && ventaActual.cliente && ventaActual.cliente.id){
+    ventaActual.cliente.saldo=(+ventaActual.cliente.saldo||0)+montoCta;
   }
+
   var itemsCopy=ventaActual.items.map(function(i){return Object.assign({},i);});
-  var vGuardada=Object.assign({},vData,{items:itemsCopy});
+  var vGuardada={num:num,fecha:fechaVenta,cliente:ventaActual.cliente?ventaActual.cliente.nombre:null,cliente_tel:ventaActual.cliente?ventaActual.cliente.tel:null,pago:pagoCombinado,tipo_precio:ventaActual.tipoPrecio,total:total,descuento:descuento,items:itemsCopy};
   ventaActual={items:[],cliente:null,pago:'Efectivo',tipoPrecio:'minorista',pago2:null,pago2monto:0,descuento:0,descuentoTipo:'',subtotal:0};
   var dtEl=document.getElementById('desc-tipo');if(dtEl)dtEl.value='';
   var dvEl=document.getElementById('desc-valor');if(dvEl)dvEl.value='0';
