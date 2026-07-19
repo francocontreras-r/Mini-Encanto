@@ -922,7 +922,7 @@ if('serviceWorker' in navigator){
 }
 
 // ── Auto-actualización: detecta cuando hay una versión nueva publicada ───────
-var APP_VERSION = '2026-07-18-02'; // ⚠️ SUBIR este valor en cada publicación
+var APP_VERSION = '2026-07-18-03'; // ⚠️ SUBIR este valor en cada publicación
 
 function _appOcupada(){
   var mod=document.getElementById('modales'); if(mod && mod.innerHTML.trim()) return true;
@@ -1815,10 +1815,10 @@ function irACaja(){nav('caja');}
 
 async function verificarCajaParaVenta(){
   try {
-    var hoy=new Date().toISOString().split('T')[0];
-    var r=await sb.from('cajas').select('id,estado').eq('estado','abierta').gte('apertura',hoy+'T00:00:00').maybeSingle();
+    var r=await sb.from('cajas').select('id,estado').eq('estado','abierta').order('apertura',{ascending:false}).limit(1);
+    var cajaAbierta=(r.data&&r.data[0])||null;
     var banner=document.getElementById('venta-caja-banner');
-    if(!r.data){
+    if(!cajaAbierta){
       if(banner){
         banner.style.display='block';
         banner.innerHTML='<div class="alert alert-warn" style="margin-bottom:1rem;">Advertencia: No hay caja abierta. <button class="btn btn-sm btn-verde" onclick="irACaja()">Abrir caja</button></div>';
@@ -2762,9 +2762,8 @@ var _cajaActual = null;
 
 async function verificarCajaAbierta(){
   try {
-    var hoy=new Date().toISOString().split('T')[0];
-    var r=await sb.from('cajas').select('*').eq('estado','abierta').gte('apertura',hoy+'T00:00:00').maybeSingle();
-    _cajaActual=r.data||null;
+    var r=await sb.from('cajas').select('*').eq('estado','abierta').order('apertura',{ascending:false}).limit(1);
+    _cajaActual=(r.data&&r.data[0])||null;
   } catch(e) {
     _cajaActual=null;
   }
@@ -2783,9 +2782,8 @@ async function renderCaja(){
 
   // Try to find open caja
   try {
-    var hoyStr=hoy.toISOString().split('T')[0];
-    var r=await sb.from('cajas').select('*').eq('estado','abierta').gte('apertura',hoyStr+'T00:00:00').maybeSingle();
-    _cajaActual=r.data||null;
+    var r=await sb.from('cajas').select('*').eq('estado','abierta').order('apertura',{ascending:false}).limit(1);
+    _cajaActual=(r.data&&r.data[0])||null;
   } catch(e) {
     _cajaActual=null;
     console.log('Cajas table error:', e);
