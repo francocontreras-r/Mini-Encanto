@@ -1,49 +1,43 @@
 -- ============================================================================
--- Mini Encanto — RPC transaccional de venta
+-- Mini Encanto — RPC transaccional de venta (con descuento y recargo)
 -- ----------------------------------------------------------------------------
--- Registra una venta completa en UNA sola transacción atómica:
---   1. Cabecera de la venta (tabla ventas)
---   2. Descuento de stock de cada variante (con bloqueo de fila)
---   3. Registro de movimientos (tipo = 'venta')
---   4. Detalle de items (tabla items_ventas)
---   5. Actualización de saldo de cuenta corriente (si corresponde)
+-- Registra una venta completa en UNA transacción atómica (cabecera + stock +
+-- movimientos + items + cuenta corriente). El total se calcula en el servidor:
+--     total = subtotal - descuento + recargo
+-- (el recargo sirve, por ejemplo, para el adicional por tarjeta de crédito).
 --
--- Si CUALQUIER paso falla, se revierte TODO (no quedan ventas a medias).
---
--- NUMERACIÓN DE TICKETS: usa una secuencia de Postgres (ventas_num_seq).
--- Es atómica y a prueba de concurrencia por diseño. La secuencia se siembra
--- ignorando números "gigantes" (timestamps que quedaron de versiones viejas):
--- solo mira los números normales (< 1.000.000.000) para continuar desde ahí,
--- o arranca en 1001 si no hay ninguno. Así los tickets vuelven a ser #1001,
--- #1002, #1003… sin importar la basura que haya quedado en la tabla.
---
--- El total se calcula en el servidor a partir de los items: no se confía en el
--- total que manda el cliente.
---
--- Cómo aplicar: pegar este archivo COMPLETO en Supabase → SQL Editor → Run.
--- (Se puede volver a correr sin problema; es idempotente.)
+-- Cómo aplicar: pegar COMPLETO en Supabase → SQL Editor → Run. Es idempotente.
 -- ============================================================================
+
+-- 0) Columna de recargo en ventas (si no existe)
+alter table public.ventas add column if not exists recargo numeric default 0;
 
 -- 1) Secuencia para el número de ticket, sembrada a un valor limpio.
 create sequence if not exists public.ventas_num_seq;
 select setval(
   'public.ventas_num_seq',
   greatest(1000, coalesce((select max(num) from public.ventas where num < 1000000000), 1000)),
-  true  -- el próximo nextval() devolverá este valor + 1
+  true
 );
 
--- 2) Función transaccional de venta.
+-- 2) Se elimina la versión anterior de la función (sin recargo) para reemplazar
+--    su firma por la nueva.
+drop function if exists public.registrar_venta(
+  text, text, text, text, text, numeric, text, text, numeric, jsonb);
+
+-- 3) Función transaccional de venta (con p_recargo).
 create or replace function public.registrar_venta(
-  p_cliente_id      text,      -- id del cliente (null = consumidor final)
+  p_cliente_id      text,
   p_cliente_nombre  text,
   p_cliente_tel     text,
-  p_pago            text,      -- ej. 'Efectivo' o 'Efectivo + Cuenta cte.'
-  p_tipo_precio     text,      -- 'minorista' | 'mayorista'
-  p_descuento       numeric,   -- monto de descuento ya calculado
+  p_pago            text,
+  p_tipo_precio     text,
+  p_descuento       numeric,
   p_descuento_tipo  text,
   p_usuario         text,
-  p_monto_cta       numeric,   -- cuánto de esta venta va a cuenta corriente (0 = nada)
-  p_items           jsonb      -- [{variante_id, producto_id, nombre, talle, precio, qty}, ...]
+  p_monto_cta       numeric,
+  p_items           jsonb,
+  p_recargo         numeric default 0
 )
 returns jsonb
 language plpgsql
@@ -63,44 +57,35 @@ declare
   v_nuevo     numeric;
   v_saldo     numeric;
 begin
-  -- 0) Validación mínima
   if p_items is null or jsonb_array_length(p_items) = 0 then
     raise exception 'La venta no tiene items';
   end if;
 
-  -- 1) Número de ticket: la secuencia lo asigna de forma atómica y sin carrera.
   v_num := nextval('public.ventas_num_seq');
 
-  -- 2) Subtotal y total calculados en el servidor
   for v_item in select value from jsonb_array_elements(p_items) as t(value) loop
     v_subtotal := v_subtotal
       + (coalesce((v_item->>'precio')::numeric, 0)
        * coalesce((v_item->>'qty')::numeric, 0));
   end loop;
-  v_total := v_subtotal - coalesce(p_descuento, 0);
+  v_total := v_subtotal - coalesce(p_descuento, 0) + coalesce(p_recargo, 0);
 
-  -- 3) Cabecera de la venta
   insert into ventas (num, fecha, cliente, cliente_tel, pago, tipo_precio,
-                      total, descuento, descuento_tipo, usuario)
+                      total, descuento, descuento_tipo, usuario, recargo)
   values (v_num, v_fecha, p_cliente_nombre, p_cliente_tel, p_pago, p_tipo_precio,
-          v_total, coalesce(p_descuento, 0), p_descuento_tipo, p_usuario);
+          v_total, coalesce(p_descuento, 0), p_descuento_tipo, p_usuario,
+          coalesce(p_recargo, 0));
 
-  -- 4) Por cada item: descontar stock (con bloqueo), registrar movimiento y detalle
   for v_item in select value from jsonb_array_elements(p_items) as t(value) loop
     v_var_id := v_item->>'variante_id';
     v_qty    := coalesce((v_item->>'qty')::numeric, 0);
     v_precio := coalesce((v_item->>'precio')::numeric, 0);
 
     if v_var_id is not null and v_var_id <> '' then
-      -- Bloqueo de fila: dos ventas simultáneas no pueden leer el mismo stock
       select stock into v_stock from variantes where id = v_var_id for update;
       if not found then
         raise exception 'Variante inexistente: %', v_var_id;
       end if;
-
-      -- Política actual: el stock nunca baja de 0 (permite vender aunque esté en 0).
-      -- Para bloquear la venta por falta de stock, reemplazar por:
-      --   if coalesce(v_stock,0) < v_qty then raise exception ...
       v_nuevo := greatest(0, coalesce(v_stock, 0) - v_qty);
       update variantes set stock = v_nuevo where id = v_var_id;
 
@@ -114,7 +99,6 @@ begin
             v_item->>'talle', v_precio, v_qty);
   end loop;
 
-  -- 5) Cuenta corriente (con bloqueo de fila del cliente)
   if p_cliente_id is not null and p_cliente_id <> '' and coalesce(p_monto_cta, 0) > 0 then
     select saldo into v_saldo from clientes where id = p_cliente_id for update;
     if found then
@@ -127,8 +111,7 @@ begin
 end;
 $$;
 
--- Permisos: la app usa usuarios autenticados de Supabase Auth.
 revoke all on function public.registrar_venta(
-  text, text, text, text, text, numeric, text, text, numeric, jsonb) from public;
+  text, text, text, text, text, numeric, text, text, numeric, jsonb, numeric) from public;
 grant execute on function public.registrar_venta(
-  text, text, text, text, text, numeric, text, text, numeric, jsonb) to authenticated;
+  text, text, text, text, text, numeric, text, text, numeric, jsonb, numeric) to authenticated;

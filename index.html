@@ -647,6 +647,19 @@ input:focus,select:focus{border-color:var(--rosa);}
           <div id="desc-info" style="font-size:12px;color:var(--verde-d);font-weight:700;"></div>
         </div>
       </div>
+      <div class="card">
+        <div class="card-title">Recargo</div>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <select id="recargo-tipo" onchange="aplicarDescuento()" style="width:120px;font-size:13px;padding:7px 10px;">
+            <option value="">Sin recargo</option>
+            <option value="pct">% Porcentaje</option>
+            <option value="fijo">$ Monto fijo</option>
+          </select>
+          <input type="number" id="recargo-valor" value="0" min="0" style="width:90px;font-size:13px;" oninput="aplicarDescuento()">
+          <div id="recargo-info" style="font-size:12px;color:var(--marron);font-weight:700;"></div>
+        </div>
+        <div style="font-size:11px;color:var(--texto-s);margin-top:6px;">Ej: adicional por pago con tarjeta de crédito.</div>
+      </div>
       <div class="total-box">
         <div>
           <div style="font-size:14px;font-weight:600;color:var(--texto-s)">Total</div>
@@ -944,7 +957,7 @@ if('serviceWorker' in navigator){
 }
 
 // ── Auto-actualización: detecta cuando hay una versión nueva publicada ───────
-var APP_VERSION = '2026-07-18-04'; // ⚠️ SUBIR este valor en cada publicación
+var APP_VERSION = '2026-09-16-01'; // ⚠️ SUBIR este valor en cada publicación
 
 function _appOcupada(){
   var mod=document.getElementById('modales'); if(mod && mod.innerHTML.trim()) return true;
@@ -1831,7 +1844,7 @@ function imprimirEtiqueta(){
 }
 
 // ── VENTA ─────────────────────────────────────────────────────────────────────
-var ventaActual={items:[],cliente:null,pago:'Efectivo',tipoPrecio:'minorista'};
+var ventaActual={items:[],cliente:null,pago:'Efectivo',tipoPrecio:'minorista',descuento:0,descuentoTipo:'',recargo:0,recargoTipo:''};
 
 function irACaja(){nav('caja');}
 
@@ -2084,7 +2097,18 @@ function aplicarDescuento(){
   else if(tipo==='fijo'&&valor>0){descMonto=Math.min(valor,subtotal);}
   ventaActual.descuento=descMonto;
   ventaActual.descuentoTipo=tipo?(tipo==='pct'?valor+'%':'$'+valor):'';
-  var total=subtotal-descMonto;
+
+  // Recargo (ej. adicional por tarjeta de crédito), sobre el neto (subtotal - descuento)
+  var rtipo=document.getElementById('recargo-tipo')?document.getElementById('recargo-tipo').value:'';
+  var rvalor=parseFloat(document.getElementById('recargo-valor')?document.getElementById('recargo-valor').value:0)||0;
+  var baseRec=Math.max(0,subtotal-descMonto);
+  var recMonto=0;
+  if(rtipo==='pct'&&rvalor>0){recMonto=Math.round(baseRec*rvalor/100);}
+  else if(rtipo==='fijo'&&rvalor>0){recMonto=rvalor;}
+  ventaActual.recargo=recMonto;
+  ventaActual.recargoTipo=rtipo?(rtipo==='pct'?rvalor+'%':'$'+rvalor):'';
+
+  var total=subtotal-descMonto+recMonto;
   document.getElementById('venta-total').textContent=fmt(total);
   var info=document.getElementById('desc-info');
   var badge=document.getElementById('desc-badge');
@@ -2095,6 +2119,8 @@ function aplicarDescuento(){
     if(info)info.textContent='';
     if(badge)badge.style.display='none';
   }
+  var rinfo=document.getElementById('recargo-info');
+  if(rinfo)rinfo.textContent=recMonto>0?('+'+fmt(recMonto)):'';
 }
 
 function cambQty(varianteId,d){
@@ -2261,7 +2287,8 @@ function mostrarPantallaCobro(tipo){
 async function procesarVenta(){
   var subtotal=ventaActual.items.reduce(function(a,i){return a+i.precio*i.qty;},0);
   var descuento=ventaActual.descuento||0;
-  var total=subtotal-descuento;
+  var recargo=ventaActual.recargo||0;
+  var total=subtotal-descuento+recargo;
   var pagoCombinado=ventaActual.pago2&&ventaActual.pago2monto>0?ventaActual.pago+' + '+ventaActual.pago2:ventaActual.pago;
 
   // Cuánto de esta venta va a cuenta corriente (0 = nada)
@@ -2290,7 +2317,8 @@ async function procesarVenta(){
     p_descuento_tipo:ventaActual.descuentoTipo||null,
     p_usuario:_usuarioActual,
     p_monto_cta:montoCta,
-    p_items:itemsPayload
+    p_items:itemsPayload,
+    p_recargo:recargo
   });
   if(r.error){toast('Error al registrar la venta: '+(r.error.message||''));return;}
   var num=(r.data&&r.data.num)||null;
@@ -2306,12 +2334,15 @@ async function procesarVenta(){
   }
 
   var itemsCopy=ventaActual.items.map(function(i){return Object.assign({},i);});
-  var vGuardada={num:num,fecha:fechaVenta,cliente:ventaActual.cliente?ventaActual.cliente.nombre:null,cliente_tel:ventaActual.cliente?ventaActual.cliente.tel:null,pago:pagoCombinado,tipo_precio:ventaActual.tipoPrecio,total:total,descuento:descuento,items:itemsCopy};
-  ventaActual={items:[],cliente:null,pago:'Efectivo',tipoPrecio:'minorista',pago2:null,pago2monto:0,descuento:0,descuentoTipo:'',subtotal:0};
+  var vGuardada={num:num,fecha:fechaVenta,cliente:ventaActual.cliente?ventaActual.cliente.nombre:null,cliente_tel:ventaActual.cliente?ventaActual.cliente.tel:null,pago:pagoCombinado,tipo_precio:ventaActual.tipoPrecio,total:total,descuento:descuento,recargo:recargo,items:itemsCopy};
+  ventaActual={items:[],cliente:null,pago:'Efectivo',tipoPrecio:'minorista',pago2:null,pago2monto:0,descuento:0,descuentoTipo:'',recargo:0,recargoTipo:'',subtotal:0};
   var dtEl=document.getElementById('desc-tipo');if(dtEl)dtEl.value='';
   var dvEl=document.getElementById('desc-valor');if(dvEl)dvEl.value='0';
   var diEl=document.getElementById('desc-info');if(diEl)diEl.textContent='';
   var dbEl=document.getElementById('desc-badge');if(dbEl)dbEl.style.display='none';
+  var rtEl=document.getElementById('recargo-tipo');if(rtEl)rtEl.value='';
+  var rvEl=document.getElementById('recargo-valor');if(rvEl)rvEl.value='0';
+  var riEl=document.getElementById('recargo-info');if(riEl)riEl.textContent='';
   var p2el=document.getElementById('pago2-tipo');if(p2el)p2el.value='';
   var p2m=document.getElementById('pago2-monto');if(p2m)p2m.value='';
   var di=document.getElementById('division-info');if(di)di.textContent='';
@@ -2321,7 +2352,10 @@ async function procesarVenta(){
 
 function mostrarRecibo(v){
   var lineas=v.items.map(function(i){return i.nombre+'\n  Talle '+i.talle+'\n  '+i.qty+' x '+fmt(i.precio)+' = '+fmt(i.precio*i.qty);}).join('\n');
-  abrirModal('<div class="modal"><div class="modal-title">🎀 Venta #'+v.num+'</div><div class="recibo">    * MINI ENCANTO *\n    Ropa de bebé y niños\n──────────────────────\n'+fmtF(v.fecha)+'\nCliente: '+(v.cliente||'Consumidor final')+(v.cliente_tel?' ('+v.cliente_tel+')':'')+'\nPago: '+v.pago+' | '+v.tipo_precio+'\n──────────────────────\n'+lineas+'\n──────────────────────\nTOTAL: '+fmt(v.total)+'\n══════════════════════</div><div class="modal-footer"><button class="btn btn-outline" onclick="cerrarModal()">Cerrar</button><button class="btn btn-verde" onclick="window.print()">🖨️ Imprimir</button></div></div>');
+  var ajustes='';
+  if(+v.descuento>0) ajustes+='\nDescuento: -'+fmt(v.descuento);
+  if(+v.recargo>0) ajustes+='\nRecargo tarjeta: +'+fmt(v.recargo);
+  abrirModal('<div class="modal"><div class="modal-title">🎀 Venta #'+v.num+'</div><div class="recibo">    * MINI ENCANTO *\n    Ropa de bebé y niños\n──────────────────────\n'+fmtF(v.fecha)+'\nCliente: '+(v.cliente||'Consumidor final')+(v.cliente_tel?' ('+v.cliente_tel+')':'')+'\nPago: '+v.pago+' | '+v.tipo_precio+'\n──────────────────────\n'+lineas+ajustes+'\n──────────────────────\nTOTAL: '+fmt(v.total)+'\n══════════════════════</div><div class="modal-footer"><button class="btn btn-outline" onclick="cerrarModal()">Cerrar</button><button class="btn btn-verde" onclick="window.print()">🖨️ Imprimir</button></div></div>');
 }
 
 // ── HISTORIAL ─────────────────────────────────────────────────────────────────
