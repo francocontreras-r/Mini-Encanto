@@ -957,7 +957,7 @@ if('serviceWorker' in navigator){
 }
 
 // ── Auto-actualización: detecta cuando hay una versión nueva publicada ───────
-var APP_VERSION = '2026-09-16-01'; // ⚠️ SUBIR este valor en cada publicación
+var APP_VERSION = '2026-09-17-01'; // ⚠️ SUBIR este valor en cada publicación
 
 function _appOcupada(){
   var mod=document.getElementById('modales'); if(mod && mod.innerHTML.trim()) return true;
@@ -1900,7 +1900,7 @@ function selPago2(pago2){
 function actualizarDivision(){
   var subtotal=ventaActual.items.reduce(function(a,i){return a+i.precio*i.qty;},0);
   var descuento=ventaActual.descuento||0;
-  var total=subtotal-descuento;
+  var total=subtotal-descuento+(ventaActual.recargo||0);
   var monto2=parseFloat(document.getElementById('pago2-monto').value)||0;
   var tipo2=document.getElementById('pago2-tipo').value;
   ventaActual.pago2=tipo2||null;
@@ -2238,7 +2238,7 @@ async function validarCuentaCteYContinuar(){
 function mostrarPantallaCobro(tipo){
   var subtotal=ventaActual.items.reduce(function(a,i){return a+i.precio*i.qty;},0);
   var descuento=ventaActual.descuento||0;
-  var total=subtotal-descuento;
+  var total=subtotal-descuento+(ventaActual.recargo||0);
   var mp=CFG_PAGOS.mpLink;
   var inner='';
 
