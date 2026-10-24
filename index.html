@@ -682,10 +682,11 @@ input:focus,select:focus{border-color:var(--rosa);}
     </div>
   </div>
   <div id="caja-estado-banner"></div>
-  <div class="metrics" style="grid-template-columns:repeat(4,1fr);margin-top:1rem;">
+  <div class="metrics" style="grid-template-columns:repeat(5,1fr);margin-top:1rem;">
     <div class="metric verde"><div class="metric-label">💵 Efectivo</div><div class="metric-value" id="caja-m-efe">$0</div></div>
     <div class="metric rosa"><div class="metric-label">📲 Transferencia</div><div class="metric-value" id="caja-m-tra">$0</div></div>
     <div class="metric marron"><div class="metric-label">💳 Tarjetas</div><div class="metric-value" id="caja-m-tar">$0</div></div>
+    <div class="metric gris"><div class="metric-label">🏧 Tarjeta data</div><div class="metric-value" id="caja-m-data">$0</div></div>
     <div class="metric gris"><div class="metric-label">📋 Cta. cte.</div><div class="metric-value" id="caja-m-cta">$0</div></div>
   </div>
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-top:1rem;">
@@ -959,7 +960,7 @@ if('serviceWorker' in navigator){
 }
 
 // ── Auto-actualización: detecta cuando hay una versión nueva publicada ───────
-var APP_VERSION = '2026-10-24-01'; // ⚠️ SUBIR este valor en cada publicación
+var APP_VERSION = '2026-10-24-02'; // ⚠️ SUBIR este valor en cada publicación
 
 function _appOcupada(){
   var mod=document.getElementById('modales'); if(mod && mod.innerHTML.trim()) return true;
@@ -2863,20 +2864,22 @@ async function renderCaja(){
   var r=await sb.from('ventas').select('*').gte('fecha',_cajaActual.apertura).order('num',{ascending:false});
   var ventas=r.data||[];
 
-  var totEfe=0,totTra=0,totTar=0,totCta=0,totTotal=0;
+  var totEfe=0,totTra=0,totTar=0,totData=0,totCta=0,totTotal=0;
   ventas.forEach(function(v){
     var t=+v.total||0;
     totTotal+=t;
     var p=v.pago||'';
     if(p.indexOf('Efectivo')>=0)totEfe+=t;
     else if(p.indexOf('Transferencia')>=0)totTra+=t;
-    else if(p.indexOf('Débito')>=0||p.indexOf('Crédito')>=0||p.indexOf('Debito')>=0||p.indexOf('Credito')>=0||p.indexOf('Tarjeta')>=0)totTar+=t;
+    else if(p.indexOf('Tarjeta data')>=0)totData+=t;
+    else if(p.indexOf('Débito')>=0||p.indexOf('Crédito')>=0||p.indexOf('Debito')>=0||p.indexOf('Credito')>=0)totTar+=t;
     else if(p.indexOf('Cuenta')>=0)totCta+=t;
   });
 
   document.getElementById('caja-m-efe').textContent=fmt(totEfe);
   document.getElementById('caja-m-tra').textContent=fmt(totTra);
   document.getElementById('caja-m-tar').textContent=fmt(totTar);
+  var elCajaData=document.getElementById('caja-m-data');if(elCajaData)elCajaData.textContent=fmt(totData);
   document.getElementById('caja-m-cta').textContent=fmt(totCta);
 
   // Load movimientos caja
