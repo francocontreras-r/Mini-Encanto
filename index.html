@@ -617,6 +617,7 @@ input:focus,select:focus{border-color:var(--rosa);}
           <button class="pago-btn" id="pago-tra" onclick="selPago('Transferencia')">📲 Transferencia</button>
           <button class="pago-btn" id="pago-deb" onclick="selPago('Débito')">💳 Débito</button>
           <button class="pago-btn" id="pago-cre" onclick="selPago('Crédito')">💳 Crédito</button>
+          <button class="pago-btn" id="pago-data" onclick="selPago('Tarjeta data')">🏧 Tarjeta data</button>
           <button class="pago-btn" id="pago-cta" onclick="selPago('Cuenta cte.')">📋 Cuenta cte.</button>
         </div>
         <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--borde);">
@@ -629,6 +630,7 @@ input:focus,select:focus{border-color:var(--rosa);}
               <option value="Transferencia">📲 Transferencia</option>
               <option value="Débito">💳 Débito</option>
               <option value="Crédito">💳 Crédito</option>
+              <option value="Tarjeta data">🏧 Tarjeta data</option>
             </select>
             <input type="number" id="pago2-monto" placeholder="Monto" style="width:90px;font-size:12px;padding:5px 8px;" oninput="actualizarDivision()">
           </div>
@@ -957,7 +959,7 @@ if('serviceWorker' in navigator){
 }
 
 // ── Auto-actualización: detecta cuando hay una versión nueva publicada ───────
-var APP_VERSION = '2026-09-17-01'; // ⚠️ SUBIR este valor en cada publicación
+var APP_VERSION = '2026-10-24-01'; // ⚠️ SUBIR este valor en cada publicación
 
 function _appOcupada(){
   var mod=document.getElementById('modales'); if(mod && mod.innerHTML.trim()) return true;
@@ -1120,16 +1122,16 @@ async function cargarDashboard(){
   // Ventas por forma de pago del mes
   var vMesAll=await sb.from('ventas').select('pago,total,tipo_precio').gte('fecha',mesIni.toISOString());
   var allV=vMesAll.data||[];
-  var pagos={Efectivo:0,Transferencia:0,'Débito':0,'Crédito':0,'Cuenta cte.':0};
-  var pagosCant={Efectivo:0,Transferencia:0,'Débito':0,'Crédito':0,'Cuenta cte.':0};
+  var pagos={Efectivo:0,Transferencia:0,'Débito':0,'Crédito':0,'Tarjeta data':0,'Cuenta cte.':0};
+  var pagosCant={Efectivo:0,Transferencia:0,'Débito':0,'Crédito':0,'Tarjeta data':0,'Cuenta cte.':0};
   var minorista=0,mayorista=0;
   allV.forEach(function(v){
     if(pagos[v.pago]!==undefined){pagos[v.pago]+=(+v.total||0);pagosCant[v.pago]++;}
     if(v.tipo_precio==='minorista')minorista+=(+v.total||0);
     else if(v.tipo_precio==='mayorista')mayorista+=(+v.total||0);
   });
-  var iconosPago={Efectivo:'💵',Transferencia:'📲','Débito':'💳','Crédito':'💳','Cuenta cte.':'📋'};
-  var colBorde={Efectivo:'#7A9E7E',Transferencia:'#E8A598','Débito':'#C4956A','Crédito':'#9B8EC4','Cuenta cte.':'#8A8880'};
+  var iconosPago={Efectivo:'💵',Transferencia:'📲','Débito':'💳','Crédito':'💳','Tarjeta data':'🏧','Cuenta cte.':'📋'};
+  var colBorde={Efectivo:'#7A9E7E',Transferencia:'#E8A598','Débito':'#C4956A','Crédito':'#9B8EC4','Tarjeta data':'#3B7DD8','Cuenta cte.':'#8A8880'};
   var dpHTML='<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:12px;">';
   Object.keys(pagos).forEach(function(k){
     dpHTML+='<div style="background:var(--crema);border-radius:12px;padding:12px;border-left:3px solid '+(colBorde[k]||'#ccc')+';">'
@@ -1880,7 +1882,7 @@ function selTipo(tipo){
 function selPago(pago){
   ventaActual.pago=pago;
   document.querySelectorAll('.pago-btn').forEach(function(b){b.classList.remove('active');});
-  var map={Efectivo:'efe',Transferencia:'tra','Débito':'deb','Crédito':'cre','Cuenta cte.':'cta'};
+  var map={Efectivo:'efe',Transferencia:'tra','Débito':'deb','Crédito':'cre','Tarjeta data':'data','Cuenta cte.':'cta'};
   var el=document.getElementById('pago-'+map[pago]);
   if(el) el.classList.add('active');
   // Reset pago dividido si se elige cuenta corriente
@@ -2431,17 +2433,17 @@ async function renderHistorial(){
   elMargen.textContent=(total>0?margen.toFixed(1):'0')+'% margen'
     +(cogs.sinCosto>0?' · '+cogs.sinCosto+' sin costo':'');
 
-  var medios={Efectivo:{total:0,cant:0},Transferencia:{total:0,cant:0},'Debito':{total:0,cant:0},'Credito':{total:0,cant:0},'Cuenta cte.':{total:0,cant:0}};
-  var mediosLabels={Efectivo:'Efectivo',Transferencia:'Transferencia',Debito:'Debito',Credito:'Credito','Cuenta cte.':'Cuenta cte.'};
+  var medios={Efectivo:{total:0,cant:0},Transferencia:{total:0,cant:0},'Debito':{total:0,cant:0},'Credito':{total:0,cant:0},'Tarjeta data':{total:0,cant:0},'Cuenta cte.':{total:0,cant:0}};
+  var mediosLabels={Efectivo:'Efectivo',Transferencia:'Transferencia',Debito:'Debito',Credito:'Credito','Tarjeta data':'Tarjeta data','Cuenta cte.':'Cuenta cte.'};
   ventas.forEach(function(v){
     var k=v.pago;
     if(k==='Debito'||k==='Débito')k='Debito';
     if(k==='Credito'||k==='Crédito')k='Credito';
     if(medios[k]){medios[k].total+=(+v.total||0);medios[k].cant++;}
   });
-  var colM={Efectivo:'#7A9E7E',Transferencia:'#009EE3',Debito:'#C4956A',Credito:'#9B8EC4','Cuenta cte.':'#8A8880'};
-  var icoM={Efectivo:'💵',Transferencia:'📲',Debito:'💳',Credito:'💳','Cuenta cte.':'📋'};
-  var mediosHTML='<div style="display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-bottom:1rem;">';
+  var colM={Efectivo:'#7A9E7E',Transferencia:'#009EE3',Debito:'#C4956A',Credito:'#9B8EC4','Tarjeta data':'#3B7DD8','Cuenta cte.':'#8A8880'};
+  var icoM={Efectivo:'💵',Transferencia:'📲',Debito:'💳',Credito:'💳','Tarjeta data':'🏧','Cuenta cte.':'📋'};
+  var mediosHTML='<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:1rem;">';
   Object.keys(medios).forEach(function(k){
     var activo=(_hvMedioSel===k||_hvMedioSel===mediosLabels[k]);
     mediosHTML+='<div data-medio="'+k+'" onclick="selMedioCobro(this.dataset.medio)" style="cursor:pointer;background:'+(activo?colM[k]:'var(--crema)')+';border:2px solid '+colM[k]+';border-radius:12px;padding:10px;text-align:center;transition:all .15s;">'
@@ -2610,7 +2612,7 @@ async function cobrarSaldoRapido(id){
     +'<div style="font-size:22px;font-weight:700;color:#9A1C1C;text-align:center;margin:1rem 0">Saldo pendiente: '+fmt(+c.saldo||0)+'</div>'
     +'<div class="form-group" style="margin-bottom:10px"><label class="form-label">Monto a cobrar</label><input type="number" id="ps-m" value="'+(+c.saldo||0)+'" style="font-size:18px;font-weight:700;text-align:center"></div>'
     +'<div class="form-group" style="margin-bottom:10px"><label class="form-label">Forma de pago</label>'
-    +'<select id="ps-pago"><option>Efectivo</option><option>Transferencia</option><option>Débito</option><option>Crédito</option></select></div>'
+    +'<select id="ps-pago"><option>Efectivo</option><option>Transferencia</option><option>Débito</option><option>Crédito</option><option>Tarjeta data</option></select></div>'
     +'<div class="modal-footer"><button class="btn btn-outline" onclick="cerrarModal()">Cancelar</button>'
     +'<button class="btn btn-verde" data-id="'+id+'" onclick="procesarCobroCta(this.dataset.id)">✓ Registrar pago</button></div></div>');
 }
@@ -2651,7 +2653,7 @@ async function verCli(id){
       +'<div style="font-size:13px;font-weight:700;color:var(--rosa-d);margin-bottom:8px;">💰 Saldo pendiente: '+fmt(+c.saldo||0)+'</div>'
       +'<div style="display:flex;gap:8px;align-items:center;">'
       +'<input type="number" id="ps-m" value="'+(+c.saldo||0)+'" placeholder="Monto a cobrar" style="flex:1">'
-      +'<select id="ps-pago" style="width:140px"><option>Efectivo</option><option>Transferencia</option><option>Débito</option><option>Crédito</option></select>'
+      +'<select id="ps-pago" style="width:140px"><option>Efectivo</option><option>Transferencia</option><option>Débito</option><option>Crédito</option><option>Tarjeta data</option></select>'
       +'<button class="btn btn-verde" data-id="'+id+'" onclick="cobrarSaldo(this.dataset.id)">Cobrar</button>'
       +'</div></div>';
   }
@@ -2868,7 +2870,7 @@ async function renderCaja(){
     var p=v.pago||'';
     if(p.indexOf('Efectivo')>=0)totEfe+=t;
     else if(p.indexOf('Transferencia')>=0)totTra+=t;
-    else if(p.indexOf('Débito')>=0||p.indexOf('Crédito')>=0||p.indexOf('Debito')>=0||p.indexOf('Credito')>=0)totTar+=t;
+    else if(p.indexOf('Débito')>=0||p.indexOf('Crédito')>=0||p.indexOf('Debito')>=0||p.indexOf('Credito')>=0||p.indexOf('Tarjeta')>=0)totTar+=t;
     else if(p.indexOf('Cuenta')>=0)totCta+=t;
   });
 
@@ -3420,7 +3422,7 @@ async function exportarVentasExcel(){
 // ══════════════════════════════════════════════════════════════════════════
 // INFORME DE VENTAS EN PDF
 // ══════════════════════════════════════════════════════════════════════════
-var MEDIO_COL={'Efectivo':'#3F9E63','Transferencia':'#3B7DD8','Debito':'#E08A2B','Débito':'#E08A2B','Credito':'#9264CC','Crédito':'#9264CC','Cuenta cte.':'#D9556F'};
+var MEDIO_COL={'Efectivo':'#3F9E63','Transferencia':'#3B7DD8','Debito':'#E08A2B','Débito':'#E08A2B','Credito':'#9264CC','Crédito':'#9264CC','Tarjeta data':'#5B8DB8','Cuenta cte.':'#D9556F'};
 
 function _pdfMoney(n){return '$'+Math.round(+n||0).toLocaleString('es-AR');}
 function _pdfMoneyK(n){n=+n||0; return n>=1000?('$'+Math.round(n/1000).toLocaleString('es-AR')+'k'):('$'+Math.round(n).toLocaleString('es-AR'));}
