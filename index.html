@@ -525,7 +525,7 @@ input:focus,select:focus{border-color:var(--rosa);}
 <div class="page" id="page-stock">
   <div class="page-header">
     <div class="page-title">Stock</div>
-    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+    <div id="stock-acciones-admin" style="display:flex;gap:8px;flex-wrap:wrap;">
       <button class="btn btn-warn" onclick="abrirBaja()">📉 Baja</button>
       <button class="btn btn-outline" onclick="abrirIngreso()">📥 Ingreso</button>
       <button class="btn btn-rosa" onclick="abrirNuevoProd()">+ Nuevo producto</button>
@@ -984,6 +984,8 @@ function cerrarSesion() {
   });
 }
 
+function esAdminRol(){ return _rolActual === 'admin'; }
+
 function aplicarPermisos(){
   // Contador: solo ve dashboard, historial e informes
   var soloLectura = _rolActual === 'contador';
@@ -995,6 +997,9 @@ function aplicarPermisos(){
       if(el)el.style.display='none';
     });
   }
+  // Acciones de Stock (Baja / Ingreso / Nuevo producto): solo admin.
+  var stockAcc=document.getElementById('stock-acciones-admin');
+  if(stockAcc) stockAcc.style.display = esAdmin ? 'flex' : 'none';
   // Mostrar badge de rol
   var info=document.getElementById('user-info');
   if(info){
@@ -1030,7 +1035,7 @@ if('serviceWorker' in navigator){
 }
 
 // ── Auto-actualización: detecta cuando hay una versión nueva publicada ───────
-var APP_VERSION = '2026-11-22-03'; // ⚠️ SUBIR este valor en cada publicación
+var APP_VERSION = '2026-11-22-04'; // ⚠️ SUBIR este valor en cada publicación
 
 function _appOcupada(){
   var mod=document.getElementById('modales'); if(mod && mod.innerHTML.trim()) return true;
@@ -1408,7 +1413,7 @@ async function renderStock(){
       +'<td style="color:var(--verde-d)">'+fmt(p.precio_may)+'</td>'
       +'<td>'+stockBadge(total)+'</td>'
       +'<td style="display:flex;gap:4px;">'
-      +'<button class="btn btn-sm btn-outline" data-id="'+p.id+'" onclick="editarProd(this.dataset.id)" title="Editar">✏️</button>'
+      +(esAdminRol()?'<button class="btn btn-sm btn-outline" data-id="'+p.id+'" onclick="editarProd(this.dataset.id)" title="Editar">✏️</button>':'')
       +'<button class="btn btn-sm" style="background:var(--rosa-l);color:var(--rosa-d);border:none;" data-id="'+p.id+'" data-nombre="'+p.nombre+'" data-stock="'+total+'" onclick="abrirSeguimiento(this.dataset.id,this.dataset.nombre,this.dataset.stock)" title="Seguimiento">📊</button>'
       +'</td>'
       +'</tr>'
