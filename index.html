@@ -1030,7 +1030,7 @@ if('serviceWorker' in navigator){
 }
 
 // ── Auto-actualización: detecta cuando hay una versión nueva publicada ───────
-var APP_VERSION = '2026-11-22-02'; // ⚠️ SUBIR este valor en cada publicación
+var APP_VERSION = '2026-11-22-03'; // ⚠️ SUBIR este valor en cada publicación
 
 function _appOcupada(){
   var mod=document.getElementById('modales'); if(mod && mod.innerHTML.trim()) return true;
@@ -3031,7 +3031,7 @@ async function confirmarApertura(){
   var fondo=parseFloat(document.getElementById('caja-fondo').value)||0;
   var nota=document.getElementById('caja-nota-ap').value;
   var id='CAJ'+Date.now();
-  var r=await sb.from('cajas').insert({id:id,fecha:new Date().toISOString().split('T')[0],usuario:_usuarioActual,monto_apertura:fondo,estado:'abierta',notas:nota});
+  var r=await sb.from('cajas').insert({id:id,fecha:hoyISO(),usuario:_usuarioActual,monto_apertura:fondo,estado:'abierta',notas:nota});
   if(r.error){toast('Error al abrir caja');return;}
   cerrarModal();
   toast('Caja abierta ✓');
