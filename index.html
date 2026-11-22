@@ -421,6 +421,20 @@ input:focus,select:focus{border-color:var(--rosa);}
   #page-seguimiento{align-items:flex-end !important;}
   #page-seguimiento .fs-modal{border-radius:20px 20px 0 0;padding:16px 14px;}
 }
+
+/* ── Inicio: filas de Últimas ventas y Stock bajo (móvil, sin scroll lateral) ── */
+.dv-row{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--borde);}
+.dv-row:last-child{border-bottom:none;}
+.dv-row .dv-dot{width:9px;height:9px;border-radius:50%;flex-shrink:0;}
+.dv-row .dv-mid{flex:1;min-width:0;}
+.dv-row .dv-l1{font-size:13.5px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.dv-row .dv-l2{font-size:11.5px;color:var(--texto-s);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.dv-row .dv-tot{font-weight:800;font-size:14.5px;flex-shrink:0;}
+.sb-row{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--borde);}
+.sb-row:last-child{border-bottom:none;}
+.sb-row .sb-n{flex:1;min-width:0;font-size:13.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.sb-row .sb-t{font-size:12px;color:var(--texto-s);flex-shrink:0;}
+.dash-verlink{display:block;text-align:center;font-size:12px;font-weight:700;color:var(--rosa-d);margin-top:10px;cursor:pointer;}
 </style>
 </head>
 <body>
@@ -1016,7 +1030,7 @@ if('serviceWorker' in navigator){
 }
 
 // ── Auto-actualización: detecta cuando hay una versión nueva publicada ───────
-var APP_VERSION = '2026-11-22-01'; // ⚠️ SUBIR este valor en cada publicación
+var APP_VERSION = '2026-11-22-02'; // ⚠️ SUBIR este valor en cada publicación
 
 function _appOcupada(){
   var mod=document.getElementById('modales'); if(mod && mod.innerHTML.trim()) return true;
@@ -1171,12 +1185,27 @@ async function cargarDashboard(){
   document.getElementById('m-mes-c').textContent=(vMes.data||[]).length+' transacciones';
   document.getElementById('m-prods').textContent=prods.length;
   document.getElementById('m-bajo').textContent=bajos.length;
+  var colMed={Efectivo:'#3F9E63',Transferencia:'#3B7DD8','Débito':'#E08A2B','Crédito':'#9264CC','Tarjeta data':'#5B8DB8','Cuenta cte.':'#D9556F'};
   var dv=document.getElementById('dash-ventas');
   if(!(ultV.data||[]).length){dv.innerHTML='<div class="empty"><div class="empty-icon">🧾</div>Sin ventas aún</div>';}
-  else{dv.innerHTML='<table><thead><tr><th>Fecha</th><th>Cliente</th><th>Pago</th><th>Total</th></tr></thead><tbody>'+(ultV.data||[]).map(function(v){return '<tr><td>'+fmtF(v.fecha)+'</td><td>'+(v.cliente||'—')+'</td><td><span class="badge badge-rosa">'+v.pago+'</span></td><td style="font-weight:700">'+fmt(v.total)+'</td></tr>';}).join('')+'</tbody></table>';}
+  else{
+    dv.innerHTML=(ultV.data||[]).map(function(v){
+      return '<div class="dv-row"><span class="dv-dot" style="background:'+(colMed[v.pago]||'#C4B8AE')+'"></span>'
+        +'<div class="dv-mid"><div class="dv-l1">#'+v.num+' · '+(v.cliente||'Consumidor final')+'</div>'
+        +'<div class="dv-l2">'+fmtF(v.fecha)+' · '+v.pago+'</div></div>'
+        +'<div class="dv-tot">'+fmt(v.total)+'</div></div>';
+    }).join('')
+    +'<span class="dash-verlink" onclick="irHistorialMes()">Ver todas las ventas →</span>';
+  }
   var db=document.getElementById('dash-bajo');
   if(!bajos.length){db.innerHTML='<div class="empty" style="padding:1rem">✅ Todo bien</div>';}
-  else{db.innerHTML='<table><thead><tr><th>Producto</th><th>Talle</th><th>Estado</th></tr></thead><tbody>'+bajos.map(function(v){var p=prodMap[v.producto_id];return '<tr><td style="font-weight:600">'+(p?p.nombre:'—')+'</td><td>'+v.talle+'</td><td>'+stockBadge(v.stock)+'</td></tr>';}).join('')+'</tbody></table>';}
+  else{
+    var bajosCap=bajos.slice(0,8);
+    db.innerHTML=bajosCap.map(function(v){var p=prodMap[v.producto_id];
+      return '<div class="sb-row"><div class="sb-n">'+(p?p.nombre:'—')+'</div><div class="sb-t">'+v.talle+'</div>'+stockBadge(v.stock)+'</div>';
+    }).join('')
+    +'<span class="dash-verlink" onclick="irStockBajo()">Mostrando '+bajosCap.length+' de '+bajos.length+' · Ver productos →</span>';
+  }
   // Ventas por forma de pago del mes
   var vMesAll=await sb.from('ventas').select('pago,total,tipo_precio').gte('fecha',mesIni.toISOString());
   var allV=vMesAll.data||[];
