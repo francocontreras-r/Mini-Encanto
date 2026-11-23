@@ -645,7 +645,7 @@ input:focus,select:focus{border-color:var(--rosa);}
 
 <div class="page" id="page-informes">
   <div class="page-header">
-    <div><div class="page-title">Informes de stock</div></div>
+    <div><div class="page-title">Informes</div></div>
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
       <select id="inf-periodo" onchange="onInfPeriodoChange()" style="width:160px;"><option value="dia">Hoy</option><option value="semana" selected>Esta semana</option><option value="mes">Este mes</option><option value="todo">Todo</option><option value="personalizado">📅 Personalizado</option></select>
       <div id="inf-rango" style="display:none;gap:6px;align-items:center;">
@@ -661,6 +661,15 @@ input:focus,select:focus{border-color:var(--rosa);}
     <div class="metric rosa"><div class="metric-label">🛒 Vendidas</div><div class="metric-value" id="inf-m-ven">0</div></div>
     <div class="metric gris"><div class="metric-label">📉 Bajas</div><div class="metric-value" id="inf-m-baj">0</div></div>
     <div class="metric marron"><div class="metric-label">📦 Stock total</div><div class="metric-value" id="inf-m-stock">0</div></div>
+  </div>
+  <div class="card" id="inf-resumen-card">
+    <div class="card-title">💵 Resumen del período</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:9px;">
+      <div style="background:var(--rosa-l);border-radius:12px;padding:12px;text-align:center;min-width:0;"><div style="font-size:11px;font-weight:700;color:var(--rosa-d)">🛒 Ventas</div><div style="font-size:18px;font-weight:800" id="inf-r-ventas">$0</div><div style="font-size:10px;color:var(--texto-s)" id="inf-r-ventas-c">0 ventas</div></div>
+      <div style="background:#EAF4EC;border-radius:12px;padding:12px;text-align:center;min-width:0;"><div style="font-size:11px;font-weight:700;color:var(--verde-d)">💰 Ganancia</div><div style="font-size:18px;font-weight:800;color:var(--verde-d)" id="inf-r-ganancia">$0</div><div style="font-size:10px;color:var(--texto-s)" id="inf-r-margen">0% margen</div></div>
+      <div style="background:var(--crema);border-radius:12px;padding:12px;text-align:center;min-width:0;"><div style="font-size:11px;font-weight:700;color:var(--marron)">📥 Compras</div><div style="font-size:18px;font-weight:800;color:var(--marron)" id="inf-r-compras">$0</div><div style="font-size:10px;color:var(--texto-s)" id="inf-r-compras-c">0 compras</div></div>
+    </div>
+    <div style="font-size:11px;color:var(--texto-s);margin-top:8px;">Ventas = cobrado · Ganancia = ventas − costo de lo vendido · Compras = gasto en mercadería del período.</div>
   </div>
   <div class="card">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem;flex-wrap:wrap;gap:8px;">
@@ -1248,7 +1257,7 @@ if('serviceWorker' in navigator){
 }
 
 // ── Auto-actualización: detecta cuando hay una versión nueva publicada ───────
-var APP_VERSION = '2026-11-23-04'; // ⚠️ SUBIR este valor en cada publicación
+var APP_VERSION = '2026-11-23-05'; // ⚠️ SUBIR este valor en cada publicación
 
 function _appOcupada(){
   var mod=document.getElementById('modales'); if(mod && mod.innerHTML.trim()) return true;
@@ -3097,6 +3106,23 @@ async function renderInformes(){
   document.getElementById('inf-m-ven').textContent=ven;
   document.getElementById('inf-m-baj').textContent=baj;
   document.getElementById('inf-m-stock').textContent=stockTotal;
+
+  // Resumen del período (dinero): ventas, ganancia y compras
+  var rVen=await aplicarRango(sb.from('ventas').select('num,total'),desde,hasta);
+  var ventasP=rVen.data||[];
+  var totVen=ventasP.reduce(function(a,v){return a+(+v.total||0);},0);
+  var cogsP=await _cogsPorNums(ventasP.map(function(v){return v.num;}));
+  var ganP=totVen-cogsP.total;
+  var margP=totVen>0?(ganP/totVen*100):0;
+  var rCom=await aplicarRango(sb.from('compras').select('total_costo'),desde,hasta);
+  var comprasP=rCom.data||[];
+  var totCom=comprasP.reduce(function(a,c){return a+(+c.total_costo||0);},0);
+  document.getElementById('inf-r-ventas').textContent=fmt(totVen);
+  document.getElementById('inf-r-ventas-c').textContent=ventasP.length+' ventas';
+  document.getElementById('inf-r-ganancia').textContent=fmt(ganP);
+  document.getElementById('inf-r-margen').textContent=(totVen>0?margP.toFixed(0):'0')+'% margen'+(cogsP.sinCosto>0?' · '+cogsP.sinCosto+' sin costo':'');
+  document.getElementById('inf-r-compras').textContent=fmt(totCom);
+  document.getElementById('inf-r-compras-c').textContent=comprasP.length+' compras';
 
   var q2=aplicarRango(sb.from('movimientos').select('*'),desde,hasta).order('fecha',{ascending:false});
   if(infFiltro!=='todos') q2=q2.eq('tipo',infFiltro);
