@@ -1035,7 +1035,7 @@ if('serviceWorker' in navigator){
 }
 
 // ── Auto-actualización: detecta cuando hay una versión nueva publicada ───────
-var APP_VERSION = '2026-11-23-01'; // ⚠️ SUBIR este valor en cada publicación
+var APP_VERSION = '2026-11-23-02'; // ⚠️ SUBIR este valor en cada publicación
 
 function _appOcupada(){
   var mod=document.getElementById('modales'); if(mod && mod.innerHTML.trim()) return true;
@@ -1132,6 +1132,18 @@ function stockBadge(s){
 function abrirModal(html){document.getElementById('modales').innerHTML='<div class="modal-overlay" onclick="if(event.target===this)cerrarModal()">'+html+'</div>';}
 function cerrarModal(){document.getElementById('modales').innerHTML='';}
 function toast(msg){var t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(function(){t.classList.remove('show');},2500);}
+// Ejecuta una escritura a la base y avisa si falla (devuelve true si salió bien).
+// Uso: if(!await dbRun(sb.from('x').update(...), 'No se pudo guardar')) return;
+async function dbRun(promise, errMsg){
+  try{
+    var r = await promise;
+    if(r && r.error){ toast('⚠️ '+(errMsg||'No se pudo guardar')+': '+(r.error.message||'')); return false; }
+    return true;
+  }catch(e){
+    toast('⚠️ '+(errMsg||'Error')+': '+((e&&e.message)||e));
+    return false;
+  }
+}
 
 var TALLES = '<optgroup label="Recién nacido"><option>0-3m</option><option>3-6m</option><option>6-9m</option></optgroup><optgroup label="Bebé"><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option><option>6</option></optgroup><optgroup label="Niño"><option>4</option><option>6</option><option>8</option><option>10</option><option>12</option><option>14</option><option>16</option></optgroup>';
 var TALLES_ARR = ['0-3m','3-6m','6-9m','1','2','3','4','5','6','8','10','12','14','16'];
@@ -1654,7 +1666,7 @@ async function guardarEditProd(id){
       usuario:_usuarioActual
     });
   }
-  await sb.from('productos').update({nombre:n,categoria:catV,precio_min:pm,precio_may:pM}).eq('id',id);
+  if(!await dbRun(sb.from('productos').update({nombre:n,categoria:catV,precio_min:pm,precio_may:pM}).eq('id',id), 'No se pudo actualizar el producto')) return;
 
   for(var i=0;i<_epVariantes.length;i++){
     var v=_epVariantes[i];
@@ -1678,8 +1690,8 @@ async function guardarEditProd(id){
 
 async function eliminarProd(id){
   if(!confirm('¿Eliminar? También se eliminarán sus variantes de talle.')) return;
-  await sb.from('variantes').delete().eq('producto_id',id);
-  await sb.from('productos').delete().eq('id',id);
+  if(!await dbRun(sb.from('variantes').delete().eq('producto_id',id), 'No se pudieron eliminar las variantes')) return;
+  if(!await dbRun(sb.from('productos').delete().eq('id',id), 'No se pudo eliminar el producto')) return;
   cerrarModal();renderStock();toast('Eliminado');
 }
 
@@ -1737,7 +1749,7 @@ async function sumarStock(){
   if(!variante) return;
   var qty=parseInt(document.getElementById('ing-qty').value)||1;
   var ns=(+variante.stock||0)+qty;
-  await sb.from('variantes').update({stock:ns}).eq('id',variante.id);
+  if(!await dbRun(sb.from('variantes').update({stock:ns}).eq('id',variante.id), 'No se pudo registrar el ingreso')) return;
   await sb.from('movimientos').insert({tipo:'ingreso',producto:p.nombre,producto_id:p.id,talle:variante.talle,qty:qty,motivo:'Ingreso manual',usuario:_usuarioActual});
   variante.stock=ns;
   selProductoIngreso(p.id);
@@ -1820,7 +1832,7 @@ async function registrarBaja(){
     if(qty>(+variante.stock||0)){alert('Stock insuficiente en el talle '+variante.talle);return;}
     ns=Math.max(0,(+variante.stock||0)-qty);
   }
-  await sb.from('variantes').update({stock:ns}).eq('id',variante.id);
+  if(!await dbRun(sb.from('variantes').update({stock:ns}).eq('id',variante.id), 'No se pudo registrar la baja')) return;
   await sb.from('movimientos').insert({tipo:'baja',producto:p.nombre,producto_id:p.id,talle:variante.talle,qty:qty,motivo:bajaMotivoSel+(obs?' — '+obs:''),usuario:_usuarioActual});
   await sb.from('bajas').insert({producto_id:p.id,nombre:p.nombre,motivo:bajaMotivoSel,qty:qty,obs:obs});
   variante.stock=ns;
@@ -2291,7 +2303,7 @@ async function validarYContinuar(){
   var cli=r.data;
   if(!cli){
     var id='C'+Date.now();
-    await sb.from('clientes').insert({id:id,nombre:nombre,tel:tel,email:email,saldo:0});
+    if(!await dbRun(sb.from('clientes').insert({id:id,nombre:nombre,tel:tel,email:email,saldo:0}), 'No se pudo crear el cliente')) return;
     cli={id:id,nombre:nombre,tel:tel,email:email,saldo:0};
   }
   ventaActual.cliente=cli;
@@ -2316,10 +2328,10 @@ async function validarCuentaCteYContinuar(){
   var cli=r.data;
   if(!cli){
     var id='C'+Date.now();
-    await sb.from('clientes').insert({id:id,nombre:nombre,tel:tel,email:email,cuit:cuit,direccion:dir,saldo:0});
+    if(!await dbRun(sb.from('clientes').insert({id:id,nombre:nombre,tel:tel,email:email,cuit:cuit,direccion:dir,saldo:0}), 'No se pudo crear el cliente')) return;
     cli={id:id,nombre:nombre,tel:tel,email:email,cuit:cuit,direccion:dir,saldo:0};
   } else {
-    await sb.from('clientes').update({cuit:cuit,direccion:dir}).eq('id',cli.id);
+    if(!await dbRun(sb.from('clientes').update({cuit:cuit,direccion:dir}).eq('id',cli.id), 'No se pudo actualizar el cliente')) return;
     cli.cuit=cuit;cli.direccion=dir;
   }
   ventaActual.cliente=cli;
@@ -2727,7 +2739,7 @@ async function procesarCobroCta(id){
   if(m<=0){alert('Ingresá un monto');return;}
   var r=await sb.from('clientes').select('saldo').eq('id',id).single();
   var ns=Math.max(0,(+r.data.saldo||0)-m);
-  await sb.from('clientes').update({saldo:ns}).eq('id',id);
+  if(!await dbRun(sb.from('clientes').update({saldo:ns}).eq('id',id), 'No se pudo registrar el pago')) return;
   cerrarModal();renderClientes();toast('Pago registrado. Saldo restante: '+fmt(ns));
 }
 
@@ -2742,7 +2754,7 @@ async function guardarCli(){
   var n=document.getElementById('nc-n').value.trim();
   if(!n){alert('Ingresá un nombre');return;}
   var id='C'+Date.now();
-  await sb.from('clientes').insert({id:id,nombre:n,tel:document.getElementById('nc-t').value.trim(),email:document.getElementById('nc-e').value.trim(),saldo:0});
+  if(!await dbRun(sb.from('clientes').insert({id:id,nombre:n,tel:document.getElementById('nc-t').value.trim(),email:document.getElementById('nc-e').value.trim(),saldo:0}), 'No se pudo guardar el cliente')) return;
   cerrarModal();renderClientes();toast('Cliente guardado ✓');
 }
 
@@ -2793,7 +2805,7 @@ async function cobrarSaldo(id){
   if(m<=0) return;
   var r=await sb.from('clientes').select('saldo').eq('id',id).single();
   var ns=Math.max(0,(+r.data.saldo||0)-m);
-  await sb.from('clientes').update({saldo:ns}).eq('id',id);
+  if(!await dbRun(sb.from('clientes').update({saldo:ns}).eq('id',id), 'No se pudo registrar el pago')) return;
   cerrarModal();renderClientes();toast('Pago registrado ✓');
 }
 
@@ -3187,7 +3199,7 @@ async function guardarMovCaja(){
   var motivo=document.getElementById('movcaja-motivo').value.trim();
   var monto=parseFloat(document.getElementById('movcaja-monto').value)||0;
   if(!motivo||monto<=0){alert('Completá motivo y monto');return;}
-  await sb.from('movimientos_caja').insert({caja_id:_cajaActual.id,tipo:window._movCajaTipo,motivo:motivo,monto:monto,usuario:_usuarioActual});
+  if(!await dbRun(sb.from('movimientos_caja').insert({caja_id:_cajaActual.id,tipo:window._movCajaTipo,motivo:motivo,monto:monto,usuario:_usuarioActual}), 'No se pudo registrar el movimiento')) return;
   cerrarModal();renderCaja();toast('Movimiento registrado');
 }
 
@@ -3261,14 +3273,14 @@ async function confirmarCierre(){
     return;
   }
   var notaFinal=(motivo?'Motivo diferencia: '+motivo+(nota?' | '+nota:''):nota)||'';
-  await sb.from('cajas').update({
+  if(!await dbRun(sb.from('cajas').update({
     cierre:new Date().toISOString(),
     monto_cierre_real:real,
     monto_cierre_esperado:_cierreEsperado,
     diferencia:dif,
     estado:'cerrada',
     notas:notaFinal
-  }).eq('id',_cajaActual.id);
+  }).eq('id',_cajaActual.id), 'No se pudo cerrar la caja')) return;
   cerrarModal();
   var difColor=dif===0?'var(--verde-d)':dif>0?'var(--marron)':'#9A1C1C';
   var difTxt=dif===0?'✅ Sin diferencia':dif>0?'📈 Sobrante: '+fmt(Math.abs(dif)):'🚨 Faltante: '+fmt(Math.abs(dif));
@@ -3337,9 +3349,9 @@ async function crearUsuario(){
   var r = await sb.auth.signUp({email:email, password:pass});
   if(r.error){err.style.display='block';err.textContent=r.error.message;return;}
   // Save to usuarios_app table
-  await sb.from('usuarios_app').upsert({email:email, nombre:nombre||email, created_at:new Date().toISOString()});
+  if(!await dbRun(sb.from('usuarios_app').upsert({email:email, nombre:nombre||email, created_at:new Date().toISOString()}), 'No se pudo guardar el usuario')) return;
   // Save role
-  await sb.from('usuarios_roles').upsert({email:email, rol:rol});
+  if(!await dbRun(sb.from('usuarios_roles').upsert({email:email, rol:rol}), 'No se pudo guardar el rol')) return;
   cerrarModal();
   toast('Usuario "'+email+'" creado ✓');
   cargarUsuarios();
@@ -3347,7 +3359,7 @@ async function crearUsuario(){
 
 async function eliminarUsuario(email){
   if(!confirm('¿Eliminar acceso para '+email+'? Solo se elimina del registro. Para revocar el acceso completamente, hacelo desde Supabase → Auth → Users.')) return;
-  await sb.from('usuarios_app').delete().eq('email', email);
+  if(!await dbRun(sb.from('usuarios_app').delete().eq('email', email), 'No se pudo eliminar el usuario')) return;
   cargarUsuarios();
   toast('Usuario eliminado del registro');
 }
