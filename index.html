@@ -1035,7 +1035,7 @@ if('serviceWorker' in navigator){
 }
 
 // ── Auto-actualización: detecta cuando hay una versión nueva publicada ───────
-var APP_VERSION = '2026-11-23-02'; // ⚠️ SUBIR este valor en cada publicación
+var APP_VERSION = '2026-11-23-03'; // ⚠️ SUBIR este valor en cada publicación
 
 function _appOcupada(){
   var mod=document.getElementById('modales'); if(mod && mod.innerHTML.trim()) return true;
@@ -1748,9 +1748,9 @@ async function sumarStock(){
   var variante=_variantes.find(function(v){return v.id===sel.value;});
   if(!variante) return;
   var qty=parseInt(document.getElementById('ing-qty').value)||1;
-  var ns=(+variante.stock||0)+qty;
-  if(!await dbRun(sb.from('variantes').update({stock:ns}).eq('id',variante.id), 'No se pudo registrar el ingreso')) return;
-  await sb.from('movimientos').insert({tipo:'ingreso',producto:p.nombre,producto_id:p.id,talle:variante.talle,qty:qty,motivo:'Ingreso manual',usuario:_usuarioActual});
+  var rIng=await sb.rpc('registrar_ingreso',{p_variante_id:variante.id,p_qty:qty,p_motivo:'Ingreso manual'});
+  if(rIng.error){toast('⚠️ No se pudo registrar el ingreso: '+(rIng.error.message||''));return;}
+  var ns=(rIng.data&&rIng.data.stock!=null)?rIng.data.stock:(+variante.stock||0)+qty;
   variante.stock=ns;
   selProductoIngreso(p.id);
   renderStock();
@@ -1827,14 +1827,18 @@ async function registrarBaja(){
   var esDevolucion=/devoluci[oó]n/i.test(bajaMotivoSel);
   var ns;
   if(esDevolucion){
+    // Devolución: el producto vuelve al stock (suma). Mantiene el camino actual.
     ns=(+variante.stock||0)+qty;
+    if(!await dbRun(sb.from('variantes').update({stock:ns}).eq('id',variante.id), 'No se pudo registrar la devolución')) return;
+    await sb.from('movimientos').insert({tipo:'baja',producto:p.nombre,producto_id:p.id,talle:variante.talle,qty:qty,motivo:bajaMotivoSel+(obs?' — '+obs:''),usuario:_usuarioActual});
+    await sb.from('bajas').insert({producto_id:p.id,nombre:p.nombre,motivo:bajaMotivoSel,qty:qty,obs:obs});
   }else{
+    // Baja real: resta stock de forma ATÓMICA y auditada (RPC).
     if(qty>(+variante.stock||0)){alert('Stock insuficiente en el talle '+variante.talle);return;}
-    ns=Math.max(0,(+variante.stock||0)-qty);
+    var rBaja=await sb.rpc('registrar_baja',{p_variante_id:variante.id,p_qty:qty,p_motivo:bajaMotivoSel,p_obs:obs});
+    if(rBaja.error){toast('⚠️ No se pudo registrar la baja: '+(rBaja.error.message||''));return;}
+    ns=(rBaja.data&&rBaja.data.stock!=null)?rBaja.data.stock:Math.max(0,(+variante.stock||0)-qty);
   }
-  if(!await dbRun(sb.from('variantes').update({stock:ns}).eq('id',variante.id), 'No se pudo registrar la baja')) return;
-  await sb.from('movimientos').insert({tipo:'baja',producto:p.nombre,producto_id:p.id,talle:variante.talle,qty:qty,motivo:bajaMotivoSel+(obs?' — '+obs:''),usuario:_usuarioActual});
-  await sb.from('bajas').insert({producto_id:p.id,nombre:p.nombre,motivo:bajaMotivoSel,qty:qty,obs:obs});
   variante.stock=ns;
   cerrarModal();
   renderStock();
