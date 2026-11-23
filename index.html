@@ -1257,7 +1257,7 @@ if('serviceWorker' in navigator){
 }
 
 // ── Auto-actualización: detecta cuando hay una versión nueva publicada ───────
-var APP_VERSION = '2026-11-23-05'; // ⚠️ SUBIR este valor en cada publicación
+var APP_VERSION = '2026-11-23-06'; // ⚠️ SUBIR este valor en cada publicación
 
 function _appOcupada(){
   var mod=document.getElementById('modales'); if(mod && mod.innerHTML.trim()) return true;
@@ -1406,16 +1406,24 @@ function nav(p){
 async function cargarDashboard(){
   var hoy=new Date(); hoy.setHours(0,0,0,0);
   var mesIni=new Date(hoy.getFullYear(),hoy.getMonth(),1);
-  var vHoy=await sb.from('ventas').select('total').gte('fecha',hoy.toISOString());
-  var vMes=await sb.from('ventas').select('total').gte('fecha',mesIni.toISOString());
-  var rProds=await sb.from('productos').select('id,nombre,categoria,precio_min,precio_may');
-  var rVars=await sb.from('variantes').select('*');
+  var hace14=new Date(); hace14.setDate(hace14.getDate()-13); hace14.setHours(0,0,0,0);
+  // Todas las consultas del dashboard en PARALELO (antes iban una tras otra).
+  var _dash=await Promise.all([
+    sb.from('ventas').select('total').gte('fecha',hoy.toISOString()),
+    sb.from('ventas').select('total').gte('fecha',mesIni.toISOString()),
+    sb.from('productos').select('id,nombre,categoria,precio_min,precio_may'),
+    sb.from('variantes').select('*'),
+    sb.from('ventas').select('*').order('num',{ascending:false}).limit(5),
+    sb.from('ventas').select('pago,total,tipo_precio').gte('fecha',mesIni.toISOString()),
+    sb.from('ventas').select('fecha,total').gte('fecha',hace14.toISOString()),
+    sb.from('items_ventas').select('nombre,qty').order('qty',{ascending:false})
+  ]);
+  var vHoy=_dash[0], vMes=_dash[1], rProds=_dash[2], rVars=_dash[3], ultV=_dash[4], vMesAll=_dash[5], rChart=_dash[6], rTop=_dash[7];
   var prods=rProds.data||[];
   var vars=rVars.data||[];
   var prodMap={};
   prods.forEach(function(p){prodMap[p.id]=p;});
   function stockDe(pid){return vars.filter(function(v){return v.producto_id===pid;}).reduce(function(a,v){return a+(+v.stock||0);},0);}
-  var ultV=await sb.from('ventas').select('*').order('num',{ascending:false}).limit(5);
   var bajos=vars.filter(function(v){return (+v.stock||0)<=5;}).sort(function(a,b){return (+a.stock||0)-(+b.stock||0);});
   var totHoy=(vHoy.data||[]).reduce(function(a,v){return a+(+v.total||0);},0);
   var totMes=(vMes.data||[]).reduce(function(a,v){return a+(+v.total||0);},0);
@@ -1446,8 +1454,7 @@ async function cargarDashboard(){
     }).join('')
     +'<span class="dash-verlink" onclick="irStockBajo()">Mostrando '+bajosCap.length+' de '+bajos.length+' · Ver productos →</span>';
   }
-  // Ventas por forma de pago del mes
-  var vMesAll=await sb.from('ventas').select('pago,total,tipo_precio').gte('fecha',mesIni.toISOString());
+  // Ventas por forma de pago del mes (ya consultado arriba, en paralelo)
   var allV=vMesAll.data||[];
   var pagos={Efectivo:0,Transferencia:0,'Débito':0,'Crédito':0,'Tarjeta data':0,'Cuenta cte.':0};
   var pagosCant={Efectivo:0,Transferencia:0,'Débito':0,'Crédito':0,'Tarjeta data':0,'Cuenta cte.':0};
@@ -1509,11 +1516,7 @@ async function cargarDashboard(){
     +'</tr></tfoot></table></div>';
   document.getElementById('dash-inventario').innerHTML=invHTML;
 
-  // Chart: ventas últimos 14 días
-  var hace14=new Date();
-  hace14.setDate(hace14.getDate()-13);
-  hace14.setHours(0,0,0,0);
-  var rChart=await sb.from('ventas').select('fecha,total').gte('fecha',hace14.toISOString());
+  // Chart: ventas últimos 14 días (rChart y hace14 ya calculados arriba, en paralelo)
   var dias14={};
   for(var i=0;i<14;i++){
     var dd=new Date();dd.setDate(dd.getDate()-13+i);
@@ -1557,8 +1560,7 @@ async function cargarDashboard(){
   var chartEl=document.getElementById('dash-chart-ventas');
   if(chartEl)chartEl.innerHTML=svgOut;
 
-  // Top 5 productos
-  var rTop=await sb.from('items_ventas').select('nombre,qty').order('qty',{ascending:false});
+  // Top 5 productos (rTop ya consultado arriba, en paralelo)
   var topProds={};
   (rTop.data||[]).forEach(function(i){
     if(!topProds[i.nombre])topProds[i.nombre]=0;
