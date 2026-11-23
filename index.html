@@ -1035,7 +1035,7 @@ if('serviceWorker' in navigator){
 }
 
 // ── Auto-actualización: detecta cuando hay una versión nueva publicada ───────
-var APP_VERSION = '2026-11-22-04'; // ⚠️ SUBIR este valor en cada publicación
+var APP_VERSION = '2026-11-23-01'; // ⚠️ SUBIR este valor en cada publicación
 
 function _appOcupada(){
   var mod=document.getElementById('modales'); if(mod && mod.innerHTML.trim()) return true;
@@ -1555,7 +1555,7 @@ async function guardarVariantesIniciales(prodId,nombre,tieneTalle){
   var r=await sb.from('variantes').insert(inserts);
   if(r.error){toast('Error al guardar talles: '+r.error.message);return;}
   var movs=inserts.filter(function(v){return (+v.stock||0)>0;}).map(function(v){
-    return {tipo:'ingreso',producto:nombre,talle:v.talle,qty:v.stock,motivo:'Stock inicial',usuario:_usuarioActual};
+    return {tipo:'ingreso',producto:nombre,producto_id:prodId,talle:v.talle,qty:v.stock,motivo:'Stock inicial',usuario:_usuarioActual};
   });
   if(movs.length) await sb.from('movimientos').insert(movs);
   cerrarModal();renderStock();toast('Producto y talles guardados ✓');
@@ -1661,7 +1661,7 @@ async function guardarEditProd(id){
     if(v.stock!==v._orig){
       await sb.from('variantes').update({stock:v.stock}).eq('id',v.id);
       var diff=v.stock-v._orig;
-      await sb.from('movimientos').insert({tipo:diff>0?'ingreso':'baja',producto:n,talle:v.talle,qty:Math.abs(diff),motivo:'Ajuste manual (edición de producto)',usuario:_usuarioActual});
+      await sb.from('movimientos').insert({tipo:diff>0?'ingreso':'baja',producto:n,producto_id:id,talle:v.talle,qty:Math.abs(diff),motivo:'Ajuste manual (edición de producto)',usuario:_usuarioActual});
     }
   }
   if(_epNuevasVariantes.length){
@@ -1669,7 +1669,7 @@ async function guardarEditProd(id){
     var r=await sb.from('variantes').insert(inserts);
     if(r.error){toast('Error al agregar talles: '+r.error.message);return;}
     var movs=inserts.filter(function(v){return (+v.stock||0)>0;}).map(function(v){
-      return {tipo:'ingreso',producto:n,talle:v.talle,qty:v.stock,motivo:'Stock inicial (talle agregado)',usuario:_usuarioActual};
+      return {tipo:'ingreso',producto:n,producto_id:id,talle:v.talle,qty:v.stock,motivo:'Stock inicial (talle agregado)',usuario:_usuarioActual};
     });
     if(movs.length) await sb.from('movimientos').insert(movs);
   }
@@ -1738,7 +1738,7 @@ async function sumarStock(){
   var qty=parseInt(document.getElementById('ing-qty').value)||1;
   var ns=(+variante.stock||0)+qty;
   await sb.from('variantes').update({stock:ns}).eq('id',variante.id);
-  await sb.from('movimientos').insert({tipo:'ingreso',producto:p.nombre,talle:variante.talle,qty:qty,motivo:'Ingreso manual',usuario:_usuarioActual});
+  await sb.from('movimientos').insert({tipo:'ingreso',producto:p.nombre,producto_id:p.id,talle:variante.talle,qty:qty,motivo:'Ingreso manual',usuario:_usuarioActual});
   variante.stock=ns;
   selProductoIngreso(p.id);
   renderStock();
@@ -1821,7 +1821,7 @@ async function registrarBaja(){
     ns=Math.max(0,(+variante.stock||0)-qty);
   }
   await sb.from('variantes').update({stock:ns}).eq('id',variante.id);
-  await sb.from('movimientos').insert({tipo:'baja',producto:p.nombre,talle:variante.talle,qty:qty,motivo:bajaMotivoSel+(obs?' — '+obs:''),usuario:_usuarioActual});
+  await sb.from('movimientos').insert({tipo:'baja',producto:p.nombre,producto_id:p.id,talle:variante.talle,qty:qty,motivo:bajaMotivoSel+(obs?' — '+obs:''),usuario:_usuarioActual});
   await sb.from('bajas').insert({producto_id:p.id,nombre:p.nombre,motivo:bajaMotivoSel,qty:qty,obs:obs});
   variante.stock=ns;
   cerrarModal();
@@ -3410,8 +3410,12 @@ async function abrirSeguimiento(id,nombre,stock){
     ? vs.map(function(v){var q=+v.stock||0;var w=Math.round(q/maxStock*100);return '<div class="fs-trow"><div class="tl">'+v.talle+'</div><div class="bar"><i style="width:'+w+'%"></i></div><div class="q">'+q+'</div></div>';}).join('')
     : '<div style="font-size:12px;color:var(--texto-s)">Sin talles cargados</div>';
 
-  // Movimientos (todo el historial de este producto)
-  var r = await sb.from('movimientos').select('*').eq('producto', nombre).order('fecha', {ascending:false});
+  // Movimientos (todo el historial de este producto): por producto_id O por nombre,
+  // así captura los movimientos viejos (por nombre) y resiste renombres (por id).
+  var nombreSeguro = String(nombre).replace(/"/g,'');
+  var r = await sb.from('movimientos').select('*')
+    .or('producto_id.eq.'+id+',producto.eq."'+nombreSeguro+'"')
+    .order('fecha', {ascending:false});
   _fichaMovs = r.data || [];
 
   var ing = _fichaMovs.filter(function(m){return m.tipo==='ingreso';}).reduce(function(a,m){return a+(+m.qty||0);},0);
