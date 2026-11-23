@@ -1248,7 +1248,7 @@ if('serviceWorker' in navigator){
 }
 
 // ── Auto-actualización: detecta cuando hay una versión nueva publicada ───────
-var APP_VERSION = '2026-11-23-04'; // ⚠️ SUBIR este valor en cada publicación
+var APP_VERSION = '2026-11-23-05'; // ⚠️ SUBIR este valor en cada publicación
 
 function _appOcupada(){
   var mod=document.getElementById('modales'); if(mod && mod.innerHTML.trim()) return true;
@@ -1407,7 +1407,9 @@ async function cargarDashboard(){
   prods.forEach(function(p){prodMap[p.id]=p;});
   function stockDe(pid){return vars.filter(function(v){return v.producto_id===pid;}).reduce(function(a,v){return a+(+v.stock||0);},0);}
   var ultV=await sb.from('ventas').select('*').order('num',{ascending:false}).limit(5);
-  var bajos=vars.filter(function(v){return (+v.stock||0)<=5;}).sort(function(a,b){return (+a.stock||0)-(+b.stock||0);});
+  var bajos=prods.map(function(p){return {p:p,total:stockDe(p.id),min:(p.stock_min!=null?+p.stock_min:5)};})
+    .filter(function(x){return x.total<=x.min;})
+    .sort(function(a,b){return (a.total-a.min)-(b.total-b.min);});
   var totHoy=(vHoy.data||[]).reduce(function(a,v){return a+(+v.total||0);},0);
   var totMes=(vMes.data||[]).reduce(function(a,v){return a+(+v.total||0);},0);
   document.getElementById('m-hoy').textContent=fmt(totHoy);
@@ -1432,8 +1434,9 @@ async function cargarDashboard(){
   if(!bajos.length){db.innerHTML='<div class="empty" style="padding:1rem">✅ Todo bien</div>';}
   else{
     var bajosCap=bajos.slice(0,8);
-    db.innerHTML=bajosCap.map(function(v){var p=prodMap[v.producto_id];
-      return '<div class="sb-row"><div class="sb-n">'+(p?p.nombre:'—')+'</div><div class="sb-t">'+v.talle+'</div>'+stockBadge(v.stock)+'</div>';
+    db.innerHTML=bajosCap.map(function(x){
+      var badge=x.total===0?'<span class="badge badge-out">Sin stock</span>':'<span class="badge badge-low">Quedan '+x.total+'</span>';
+      return '<div class="sb-row"><div class="sb-n">'+x.p.nombre+'</div><div class="sb-t">mín '+x.min+'</div>'+badge+'</div>';
     }).join('')
     +'<span class="dash-verlink" onclick="irStockBajo()">Mostrando '+bajosCap.length+' de '+bajos.length+' · Ver productos →</span>';
   }
@@ -1465,7 +1468,7 @@ async function cargarDashboard(){
     +'</div>';
   document.getElementById('dash-pagos').innerHTML=dpHTML;
   // Inventario por categoria
-  var invData=prods.map(function(p){return {categoria:p.categoria,precio_min:p.precio_min,precio_may:p.precio_may,stock:stockDe(p.id)};});
+  var invData=prods.map(function(p){return {categoria:p.categoria,precio_min:p.precio_min,precio_may:p.precio_may,stock:stockDe(p.id),stock_min:(p.stock_min!=null?+p.stock_min:5)};});
   var invHTML='<div style="overflow-x:auto"><table style="font-size:13px"><thead><tr>'
     +'<th>Categoría</th><th>Productos</th><th>Unidades</th><th>Valor minorista</th><th>Valor mayorista</th></tr></thead><tbody>';
   CATS.forEach(function(cat){
@@ -1474,7 +1477,7 @@ async function cargarDashboard(){
     var uds=items.reduce(function(a,p){return a+(+p.stock||0);},0);
     var valMin=items.reduce(function(a,p){return a+(+p.stock||0)*(+p.precio_min||0);},0);
     var valMay=items.reduce(function(a,p){return a+(+p.stock||0)*(+p.precio_may||0);},0);
-    var alert=items.some(function(p){return (+p.stock||0)<=5;})?'<span class="badge badge-low" style="margin-left:6px;font-size:10px;">Stock bajo</span>':'';
+    var alert=items.some(function(p){return (+p.stock||0)<=(p.stock_min!=null?+p.stock_min:5);})?'<span class="badge badge-low" style="margin-left:6px;font-size:10px;">Stock bajo</span>':'';
     invHTML+='<tr>'
       +'<td style="font-weight:600">'+cat.l+alert+'</td>'
       +'<td style="text-align:center">'+items.length+'</td>'
@@ -1612,7 +1615,7 @@ async function renderStock(){
     var mq=!q||p.nombre.toLowerCase().indexOf(q)>=0||(p.codigo||'').toLowerCase().indexOf(q)>=0;
     var mc=!cf||(p.categoria||'')===cf;
     var mt=!tf||vs.some(function(v){return v.talle===tf;});
-    var mb=_stockFiltroEspecial!=='bajo'||total<=5;
+    var mb=_stockFiltroEspecial!=='bajo'||total<=(p.stock_min!=null?+p.stock_min:5);
     return mq&&mc&&mt&&mb;
   });
   // Show filter banner if bajo filter active
@@ -1674,6 +1677,7 @@ function abrirNuevoProd(){
     +'<div style="font-size:11px;font-weight:700;color:var(--texto-s);margin-bottom:8px;">MÁRGENES DE GANANCIA</div>'
     +'<div class="form-row" style="margin-bottom:8px"><div class="form-group"><label class="form-label">💗 Margen minorista %</label><input type="number" id="np-marg-min" value="80" oninput="calcularPrecios()"></div><div class="form-group"><label class="form-label">🟢 Margen mayorista %</label><input type="number" id="np-marg-may" value="30" oninput="calcularPrecios()"></div></div>'
     +'<div class="form-row"><div class="form-group"><label class="form-label">💗 Precio minorista</label><input type="number" id="np-pm" value="0" oninput="calcularMargen()"></div><div class="form-group"><label class="form-label">🟢 Precio mayorista</label><input type="number" id="np-pM" value="0" oninput="calcularMargen()"></div></div>'
+    +'<div class="form-group" style="margin-top:10px;max-width:60%"><label class="form-label">⚠️ Stock mínimo (avisa reposición)</label><input type="number" id="np-min" value="5" min="0"></div>'
     +'<div id="np-margen-info" style="font-size:11px;color:var(--verde-d);margin-top:6px;"></div>'
     +'</div>'
     +'<div class="modal-footer"><button class="btn btn-outline" onclick="cerrarModal()">Cancelar</button><button class="btn btn-rosa" onclick="guardarProd()">Continuar →</button></div></div>');
@@ -1711,12 +1715,12 @@ async function guardarProd(){
   var cat=getCat(catV);
   var pm=parseFloat(document.getElementById('np-pm').value)||0;
   var pM=parseFloat(document.getElementById('np-pM').value)||0;
-  // costo se lee para cálculos del formulario pero NO se envía al insert
-  // porque la columna no existe en la tabla productos
+  var costo=parseFloat(document.getElementById('np-costo').value)||0;
+  var stockMin=parseFloat(document.getElementById('np-min').value)||0;
   var ts=Date.now();
   var cod='ME'+n.substring(0,4).toUpperCase().replace(/[^A-Z0-9]/g,'')+String(ts).slice(-5);
   var id='P'+ts;
-  var r=await sb.from('productos').insert({id:id,codigo:cod,nombre:n,categoria:catV,precio_min:pm,precio_may:pM});
+  var r=await sb.from('productos').insert({id:id,codigo:cod,nombre:n,categoria:catV,precio_min:pm,precio_may:pM,costo:costo,stock_min:stockMin});
   if(r.error){toast('Error: '+r.error.message);return;}
   abrirPasoVariantes(id,n,cat.talle);
 }
@@ -1804,7 +1808,7 @@ async function editarProd(id){
     +'<div class="form-group" style="margin-bottom:10px"><label class="form-label">Nombre</label><input type="text" id="ep-n" value="'+(p.nombre||'').replace(/"/g,'&quot;')+'"></div>'
     +'<div class="form-group" style="margin-bottom:10px"><label class="form-label">Categoría</label><select id="ep-cat">'+CATS.map(function(c){return '<option value="'+c.v+'"'+(c.v===p.categoria?' selected':'')+'>'+c.l+'</option>';}).join('')+'</select></div>'
     +'<div class="form-row" style="margin-bottom:10px"><div class="form-group"><label class="form-label">💗 Minorista</label><input type="number" id="ep-pm" value="'+(p.precio_min||0)+'"></div><div class="form-group"><label class="form-label">🟢 Mayorista</label><input type="number" id="ep-pM" value="'+(p.precio_may||0)+'"></div></div>'
-    +'<div class="form-group" style="margin-bottom:14px"><label class="form-label">💰 Costo</label><input type="number" id="ep-costo" value="'+(p.costo||0)+'"></div>'
+    +'<div class="form-row" style="margin-bottom:14px"><div class="form-group"><label class="form-label">💰 Costo</label><input type="number" id="ep-costo" value="'+(p.costo||0)+'"></div><div class="form-group"><label class="form-label">⚠️ Stock mínimo</label><input type="number" id="ep-min" value="'+(p.stock_min!=null?+p.stock_min:5)+'" min="0"></div></div>'
     +'<div style="border-top:1px solid var(--borde);padding-top:12px;">'
     +'<div style="font-size:11px;font-weight:700;color:var(--texto-s);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;">Variantes de talle y stock</div>'
     +'<div id="ep-variantes-list"></div>'
@@ -1880,7 +1884,8 @@ async function guardarEditProd(id){
       usuario:_usuarioActual
     });
   }
-  if(!await dbRun(sb.from('productos').update({nombre:n,categoria:catV,precio_min:pm,precio_may:pM}).eq('id',id), 'No se pudo actualizar el producto')) return;
+  var stockMin=parseFloat(document.getElementById('ep-min').value)||0;
+  if(!await dbRun(sb.from('productos').update({nombre:n,categoria:catV,precio_min:pm,precio_may:pM,costo:costo,stock_min:stockMin}).eq('id',id), 'No se pudo actualizar el producto')) return;
 
   for(var i=0;i<_epVariantes.length;i++){
     var v=_epVariantes[i];
