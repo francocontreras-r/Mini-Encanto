@@ -470,6 +470,7 @@ input:focus,select:focus{border-color:var(--rosa);}
   <button class="nav-btn nav-primary active" onclick="nav('dashboard')" id="nav-dashboard">🏠 <span class="nav-txt">Dashboard</span><span class="nav-txt-mob">Inicio</span></button>
   <div class="nav-sec">Inventario</div>
   <button class="nav-btn nav-primary" onclick="nav('stock')" id="nav-stock">📦 <span class="nav-txt">Stock</span><span class="nav-txt-mob">Stock</span></button>
+  <button class="nav-btn" onclick="nav('compras')" id="nav-compras" style="display:none;">🛒 Compras</button>
   <button class="nav-btn" onclick="nav('etiquetas')" id="nav-etiquetas">🏷️ Etiquetas</button>
   <button class="nav-btn" onclick="nav('informes')" id="nav-informes">📊 Informes</button>
   <div class="nav-sec">Caja</div>
@@ -520,6 +521,36 @@ input:focus,select:focus{border-color:var(--rosa);}
   <div class="card"><div class="card-title">📈 Ventas últimos 14 días</div><div id="dash-chart-ventas" style="overflow-x:auto;"></div></div>
   <div class="card"><div class="card-title">🏆 Top 5 productos más vendidos</div><div id="dash-top-prods"></div></div>
   <div class="card"><div class="card-title">📦 Inventario por categoría</div><div id="dash-inventario"><div class="loading"><div class="spinner"></div></div></div></div>
+</div>
+
+<div class="page" id="page-compras">
+  <div class="page-header">
+    <div class="page-title">Compras</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+      <button class="btn btn-outline" onclick="abrirProveedores()">👥 Proveedores</button>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-title">🛒 Nueva compra</div>
+    <label class="form-label">Proveedor</label>
+    <div style="display:flex;gap:8px;margin-bottom:14px;">
+      <select id="cmp-prov" style="flex:1;"></select>
+      <button class="btn btn-outline btn-sm" onclick="abrirNuevoProveedor()" title="Nuevo proveedor">＋</button>
+    </div>
+    <div style="border:1px solid var(--borde);border-radius:12px;padding:12px;margin-bottom:14px;background:var(--crema);">
+      <div style="font-size:11px;font-weight:700;color:var(--texto-s);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;">Agregar producto</div>
+      <input type="text" id="cmp-q" placeholder="Buscá el producto…" oninput="buscarCompra()" style="width:100%;margin-bottom:6px;">
+      <div id="cmp-r"></div>
+      <div id="cmp-add"></div>
+    </div>
+    <div id="cmp-lineas"></div>
+    <div id="cmp-total-box" style="display:none;justify-content:space-between;align-items:center;background:linear-gradient(120deg,var(--rosa-l),var(--crema));border-radius:12px;padding:12px 15px;margin:12px 0;">
+      <span style="font-size:12px;font-weight:700;color:var(--texto-s);">Total de la compra (costo)</span>
+      <strong id="cmp-total" style="font-size:22px;">$0</strong>
+    </div>
+    <button class="btn btn-verde" id="cmp-registrar" style="width:100%;justify-content:center;display:none;" onclick="confirmarCompra()">✓ Registrar compra (suma el stock)</button>
+  </div>
+  <div class="card"><div class="card-title">📋 Últimas compras</div><div id="cmp-historial"><div class="loading"><div class="spinner"></div></div></div></div>
 </div>
 
 <div class="page" id="page-stock">
@@ -850,6 +881,7 @@ input:focus,select:focus{border-color:var(--rosa);}
     <button class="mas-item" onclick="nav('clientes')">👥 Clientes</button>
     <button class="mas-item" onclick="nav('clientes');setCliTab('cta')">📒 Cuenta corriente</button>
     <button class="mas-item" onclick="nav('etiquetas')">🏷️ Etiquetas</button>
+    <button class="mas-item" id="mas-compras" onclick="nav('compras')" style="display:none;">🛒 Compras</button>
     <button class="mas-item mas-cerrar" onclick="cerrarMas()">Cerrar</button>
   </div>
 </div>
@@ -984,6 +1016,182 @@ function cerrarSesion() {
   });
 }
 
+// ── COMPRAS Y PROVEEDORES (Etapa D) ──────────────────────────────────────────
+var _proveedores=[];
+var _compraItems=[];
+var _cmpProdSel=null;
+function _escAttr(s){return String(s==null?'':s).replace(/"/g,'&quot;');}
+
+async function renderCompras(){
+  var rp=await sb.from('productos').select('*').order('nombre'); _prods=rp.data||[];
+  var rv=await sb.from('variantes').select('*'); _variantes=rv.data||[];
+  var rpr=await sb.from('proveedores').select('*').order('nombre'); _proveedores=rpr.data||[];
+  _compraItems=[]; _cmpProdSel=null;
+  _poblarProvSelect();
+  var q=document.getElementById('cmp-q'); if(q)q.value='';
+  document.getElementById('cmp-r').innerHTML='';
+  document.getElementById('cmp-add').innerHTML='';
+  renderCompraLineas();
+  cargarHistorialCompras();
+}
+
+function _poblarProvSelect(){
+  var sel=document.getElementById('cmp-prov'); if(!sel)return;
+  sel.innerHTML=(_proveedores.length?'':'<option value="">(sin proveedores — creá uno con ＋)</option>')
+    +_proveedores.map(function(p){return '<option value="'+p.id+'">'+p.nombre+'</option>';}).join('');
+}
+
+function buscarCompra(){
+  var q=document.getElementById('cmp-q').value.toLowerCase();
+  var r=document.getElementById('cmp-r');
+  _cmpProdSel=null; document.getElementById('cmp-add').innerHTML='';
+  if(!q){r.innerHTML='';return;}
+  var found=_prods.filter(function(p){return p.nombre.toLowerCase().indexOf(q)>=0||(p.codigo||'').toLowerCase().indexOf(q)>=0;}).slice(0,5);
+  if(!found.length){r.innerHTML='<div style="font-size:13px;color:var(--texto-s)">No encontrado. Cargalo primero en Stock.</div>';return;}
+  r.innerHTML=found.map(function(p){
+    return '<div style="display:flex;align-items:center;gap:10px;padding:9px;background:#fff;border:1px solid var(--borde);border-radius:10px;margin-bottom:6px;cursor:pointer;" data-id="'+p.id+'" onclick="selProductoCompra(this.dataset.id)">'
+      +'<div style="flex:1;min-width:0;"><div style="font-weight:600;font-size:13px">'+p.nombre+'</div><div style="font-size:11px;color:var(--texto-s)">'+variantesDe(p.id).length+' talle(s)</div></div>'
+      +'<button class="btn btn-sm btn-outline">Elegir →</button></div>';
+  }).join('');
+}
+
+function selProductoCompra(id){
+  var p=_prods.find(function(x){return x.id===id;});
+  if(!p)return;
+  _cmpProdSel=p;
+  document.getElementById('cmp-r').innerHTML='';
+  document.getElementById('cmp-q').value=p.nombre;
+  var vs=variantesDe(p.id).slice().sort(function(a,b){return tallesIdx(a.talle)-tallesIdx(b.talle);});
+  var add=document.getElementById('cmp-add');
+  if(!vs.length){add.innerHTML='<div style="font-size:12px;color:#9A1C1C">Ese producto no tiene talles. Agregalos en Stock.</div>';return;}
+  add.innerHTML='<div class="form-row" style="margin-top:4px;">'
+    +'<div class="form-group"><label class="form-label">Talle</label><select id="cmp-talle">'+vs.map(function(v){return '<option value="'+v.id+'">'+v.talle+'</option>';}).join('')+'</select></div>'
+    +'<div class="form-group"><label class="form-label">Cantidad</label><input type="number" id="cmp-qty" value="1" min="1"></div>'
+    +'<div class="form-group"><label class="form-label">Costo unit.</label><input type="number" id="cmp-costo" value="'+(+p.costo||0)+'" min="0"></div>'
+    +'</div><button class="btn btn-rosa btn-sm" style="margin-top:6px" onclick="agregarLineaCompra()">＋ Agregar a la compra</button>';
+}
+
+function agregarLineaCompra(){
+  var p=_cmpProdSel; if(!p){alert('Elegí un producto');return;}
+  var sel=document.getElementById('cmp-talle'); if(!sel)return;
+  var variante=_variantes.find(function(v){return v.id===sel.value;});
+  if(!variante)return;
+  var qty=parseInt(document.getElementById('cmp-qty').value)||0;
+  var costo=parseFloat(document.getElementById('cmp-costo').value)||0;
+  if(qty<=0){alert('Cantidad inválida');return;}
+  _compraItems.push({producto_id:p.id,variante_id:variante.id,nombre:p.nombre,talle:variante.talle,qty:qty,costo:costo});
+  _cmpProdSel=null;
+  document.getElementById('cmp-q').value='';
+  document.getElementById('cmp-add').innerHTML='';
+  renderCompraLineas();
+}
+
+function quitarLineaCompra(i){ _compraItems.splice(i,1); renderCompraLineas(); }
+
+function renderCompraLineas(){
+  var cont=document.getElementById('cmp-lineas');
+  var box=document.getElementById('cmp-total-box');
+  var btn=document.getElementById('cmp-registrar');
+  if(!_compraItems.length){
+    cont.innerHTML='<div style="font-size:12px;color:var(--texto-s);text-align:center;padding:8px 0;">Todavía no agregaste productos.</div>';
+    box.style.display='none'; btn.style.display='none'; return;
+  }
+  var total=0;
+  cont.innerHTML=_compraItems.map(function(it,i){
+    var sub=(+it.qty||0)*(+it.costo||0); total+=sub;
+    return '<div style="display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--borde);">'
+      +'<div style="flex:1;min-width:0;"><div style="font-weight:700;font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+it.nombre+'</div>'
+      +'<div style="font-size:11.5px;color:var(--texto-s)">Talle '+it.talle+' · '+it.qty+' u × '+fmt(it.costo)+'</div></div>'
+      +'<div style="font-weight:800;font-size:13.5px;">'+fmt(sub)+'</div>'
+      +'<span style="color:#B06B60;font-weight:800;cursor:pointer;padding:0 4px;" data-i="'+i+'" onclick="quitarLineaCompra(+this.dataset.i)">✕</span>'
+      +'</div>';
+  }).join('');
+  document.getElementById('cmp-total').textContent=fmt(total);
+  box.style.display='flex'; btn.style.display='flex';
+}
+
+async function confirmarCompra(){
+  if(!_compraItems.length){alert('Agregá al menos un producto.');return;}
+  var sel=document.getElementById('cmp-prov');
+  var provId=(sel&&sel.value)||null;
+  var provNombre=provId?((_proveedores.find(function(p){return p.id===provId;})||{}).nombre||''):'';
+  var btn=document.getElementById('cmp-registrar'); btn.disabled=true;
+  var r=await sb.rpc('registrar_compra',{p_proveedor_id:provId,p_proveedor_nombre:provNombre,p_items:_compraItems,p_notas:'',p_actualizar_costo:true});
+  btn.disabled=false;
+  if(r.error){toast('⚠️ No se pudo registrar la compra: '+(r.error.message||''));return;}
+  var d=r.data||{};
+  toast('✓ Compra registrada: '+(d.unidades||0)+' u · '+fmt(d.total||0));
+  _compraItems=[];
+  renderCompras();
+}
+
+async function cargarHistorialCompras(){
+  var cont=document.getElementById('cmp-historial');
+  var r=await sb.from('compras').select('*').order('fecha',{ascending:false}).limit(10);
+  var cs=r.data||[];
+  if(!cs.length){cont.innerHTML='<div class="empty" style="padding:1rem"><div class="empty-icon">📋</div>Sin compras aún</div>';return;}
+  cont.innerHTML=cs.map(function(c){
+    var fecha=new Date(c.fecha).toLocaleDateString('es-AR',{day:'2-digit',month:'2-digit',year:'2-digit'});
+    return '<div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--borde);">'
+      +'<div style="width:34px;height:34px;border-radius:10px;background:#E7F1E8;display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0;">📥</div>'
+      +'<div style="flex:1;min-width:0;"><div style="font-weight:700;font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+(c.proveedor_nombre||'Sin proveedor')+'</div>'
+      +'<div style="font-size:11.5px;color:var(--texto-s)">'+fecha+' · '+(c.unidades||0)+' u · '+(c.items_count||0)+' prod.</div></div>'
+      +'<div style="font-weight:800;font-size:14px;color:var(--verde-d);">'+fmt(c.total_costo||0)+'</div>'
+      +'</div>';
+  }).join('');
+}
+
+async function abrirProveedores(){
+  var rp=await sb.from('proveedores').select('*').order('nombre');
+  _proveedores=rp.data||[];
+  var rows=_proveedores.length?_proveedores.map(function(p){
+    return '<div style="display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--borde);">'
+      +'<div style="flex:1;min-width:0;"><div style="font-weight:700;font-size:13.5px;">'+p.nombre+'</div>'
+      +'<div style="font-size:11.5px;color:var(--texto-s)">'+(p.telefono?'📞 '+p.telefono:'')+(p.email?' · '+p.email:'')+'</div></div>'
+      +'<span style="cursor:pointer;" data-id="'+p.id+'" onclick="abrirNuevoProveedor(this.dataset.id)">✏️</span>'
+      +'<span style="cursor:pointer;color:#B06B60;" data-id="'+p.id+'" onclick="eliminarProveedor(this.dataset.id)">🗑️</span>'
+      +'</div>';
+  }).join(''):'<div style="font-size:13px;color:var(--texto-s);text-align:center;padding:12px;">Sin proveedores todavía.</div>';
+  abrirModal('<div class="modal"><div class="modal-title">👥 Proveedores</div>'
+    +'<div style="max-height:52vh;overflow-y:auto;">'+rows+'</div>'
+    +'<div class="modal-footer"><button class="btn btn-outline" onclick="cerrarModal()">Cerrar</button><button class="btn btn-rosa" onclick="abrirNuevoProveedor()">＋ Nuevo</button></div></div>');
+}
+
+function abrirNuevoProveedor(id){
+  var p=id?_proveedores.find(function(x){return x.id===id;}):null;
+  abrirModal('<div class="modal"><div class="modal-title">'+(p?'Editar proveedor':'Nuevo proveedor')+'</div>'
+    +'<input type="hidden" id="pv-id" value="'+(p?_escAttr(p.id):'')+'">'
+    +'<label class="form-label">Nombre *</label><input type="text" id="pv-nombre" value="'+(p?_escAttr(p.nombre):'')+'" style="margin-bottom:8px">'
+    +'<label class="form-label">Teléfono</label><input type="text" id="pv-tel" value="'+(p?_escAttr(p.telefono||''):'')+'" style="margin-bottom:8px">'
+    +'<label class="form-label">Email</label><input type="text" id="pv-email" value="'+(p?_escAttr(p.email||''):'')+'" style="margin-bottom:8px">'
+    +'<label class="form-label">Notas</label><input type="text" id="pv-notas" value="'+(p?_escAttr(p.notas||''):'')+'" style="margin-bottom:8px">'
+    +'<div class="modal-footer"><button class="btn btn-outline" onclick="abrirProveedores()">Cancelar</button><button class="btn btn-rosa" onclick="guardarProveedor()">Guardar</button></div></div>');
+}
+
+async function guardarProveedor(){
+  var id=document.getElementById('pv-id').value;
+  var nombre=document.getElementById('pv-nombre').value.trim();
+  if(!nombre){alert('El nombre es obligatorio');return;}
+  var data={nombre:nombre,telefono:document.getElementById('pv-tel').value.trim(),email:document.getElementById('pv-email').value.trim(),notas:document.getElementById('pv-notas').value.trim()};
+  var ok;
+  if(id){ ok=await dbRun(sb.from('proveedores').update(data).eq('id',id),'No se pudo guardar el proveedor'); }
+  else { data.id='PRV'+Date.now(); ok=await dbRun(sb.from('proveedores').insert(data),'No se pudo crear el proveedor'); }
+  if(!ok)return;
+  toast('Proveedor guardado ✓');
+  var rp=await sb.from('proveedores').select('*').order('nombre'); _proveedores=rp.data||[];
+  _poblarProvSelect();
+  abrirProveedores();
+}
+
+async function eliminarProveedor(id){
+  if(!confirm('¿Eliminar este proveedor? (no borra las compras ya registradas)'))return;
+  if(!await dbRun(sb.from('proveedores').delete().eq('id',id),'No se pudo eliminar el proveedor'))return;
+  toast('Proveedor eliminado');
+  var rp=await sb.from('proveedores').select('*').order('nombre'); _proveedores=rp.data||[];
+  _poblarProvSelect();
+  abrirProveedores();
+}
+
 function esAdminRol(){ return _rolActual === 'admin'; }
 
 function aplicarPermisos(){
@@ -1000,6 +1208,11 @@ function aplicarPermisos(){
   // Acciones de Stock (Baja / Ingreso / Nuevo producto): solo admin.
   var stockAcc=document.getElementById('stock-acciones-admin');
   if(stockAcc) stockAcc.style.display = esAdmin ? 'flex' : 'none';
+  // Compras: solo admin (sidebar + sheet móvil).
+  ['nav-compras','mas-compras'].forEach(function(id){
+    var el=document.getElementById(id);
+    if(el) el.style.display = esAdmin ? '' : 'none';
+  });
   // Mostrar badge de rol
   var info=document.getElementById('user-info');
   if(info){
@@ -1035,7 +1248,7 @@ if('serviceWorker' in navigator){
 }
 
 // ── Auto-actualización: detecta cuando hay una versión nueva publicada ───────
-var APP_VERSION = '2026-11-23-03'; // ⚠️ SUBIR este valor en cada publicación
+var APP_VERSION = '2026-11-23-04'; // ⚠️ SUBIR este valor en cada publicación
 
 function _appOcupada(){
   var mod=document.getElementById('modales'); if(mod && mod.innerHTML.trim()) return true;
@@ -1167,6 +1380,7 @@ function nav(p){
   if(p==='historial-caja') renderHistorialCajas();
   if(p==='venta'){ verificarCajaParaVenta(); _asegurarProds(); }
   if(p==='usuarios') cargarUsuarios();
+  if(p==='compras') renderCompras();
   if(p==='stock'){
     _stockFiltroEspecial=null;
     document.getElementById('stock-q').value='';
